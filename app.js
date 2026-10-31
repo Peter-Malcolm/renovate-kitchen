@@ -327,8 +327,9 @@ function togglePlug(id){sinkWater.bowls[id].plugged=!sinkWater.bowls[id].plugged
 document.querySelector('#water-tap').onclick=toggleTap;document.querySelector('#water-swivel').onclick=swivelTap;
 for(const id of ['main','small'])document.querySelector('#water-plug-'+id).onclick=()=>togglePlug(id);
 waterReset.onclick=()=>{resetWater(sinkWater);syncWater();};
-document.querySelector('#water-open').onclick=()=>{waterPanel.hidden=!waterPanel.hidden;document.querySelector('#water-open').setAttribute('aria-expanded',String(!waterPanel.hidden));};
-document.querySelector('#water-close').onclick=()=>{waterPanel.hidden=true;document.querySelector('#water-open').setAttribute('aria-expanded','false');document.querySelector('#water-open').focus();};
+/** Reveal water controls only after a direct sink interaction. */
+function revealWater(){waterPanel.hidden=false;}
+document.querySelector('#water-close').onclick=()=>{waterPanel.hidden=true;canvas.focus({preventScroll:true});};
 waterPanel.addEventListener('keydown',e=>{if(e.key==='Escape')document.querySelector('#water-close').click();});
 let waterTime=performance.now();
 /** Advance only active, visible-frame time; tab suspension cannot cause a surprise flood. */
@@ -681,7 +682,7 @@ controlsHelp.onclick=()=>{helpExpanded=!helpExpanded;controlsHelp.setAttribute('
 const pointers=new Set();let gesture=null;
 canvas.addEventListener('pointerdown',e=>{pointers.add(e.pointerId);gesture=pointers.size===1&&e.button===0?{id:e.pointerId,x:e.clientX,y:e.clientY,time:performance.now()}:null;});
 canvas.addEventListener('pointermove',e=>{if(gesture&&Math.hypot(e.clientX-gesture.x,e.clientY-gesture.y)>7){gesture=null;closeEditor();}});
-canvas.addEventListener('pointerup',e=>{const start=gesture;pointers.delete(e.pointerId);gesture=null;if(start&&start.id===e.pointerId&&performance.now()-start.time<700&&Math.hypot(e.clientX-start.x,e.clientY-start.y)<=7){const kind=pick(e.clientX,e.clientY);if(kind==='action:tap'){closeEditor();toggleTap();}else if(kind==='action:swivel'){closeEditor();swivelTap();}else if(kind?.startsWith('action:plug:')){closeEditor();togglePlug(kind.slice(12));}else if(kind?.startsWith('action:dresser:')){closeEditor();dining.toggleDresser(kind.slice(15));}else if(kind?.startsWith('action:burner:')){closeEditor();toggleBurner(Number(kind.split(':')[2]));}else if(kind?.startsWith('cabinet:')){closeEditor();toggleCabinet(kind.slice(8));}else if(kind?.startsWith('door:')){closeEditor();dining.toggleDoor(kind.slice(5));}else if(kind?.startsWith('blind:')){closeEditor();toggleBlind(kind.slice(6));}else if(kind)openEditor(kind,{x:e.clientX,y:e.clientY});else closeEditor();}});
+canvas.addEventListener('pointerup',e=>{const start=gesture;pointers.delete(e.pointerId);gesture=null;if(start&&start.id===e.pointerId&&performance.now()-start.time<700&&Math.hypot(e.clientX-start.x,e.clientY-start.y)<=7){const kind=pick(e.clientX,e.clientY);if(kind==='action:tap'){closeEditor();toggleTap();revealWater();}else if(kind==='action:swivel'){closeEditor();swivelTap();revealWater();}else if(kind?.startsWith('action:plug:')){closeEditor();togglePlug(kind.slice(12));revealWater();}else if(kind?.startsWith('action:dresser:')){closeEditor();dining.toggleDresser(kind.slice(15));}else if(kind?.startsWith('action:burner:')){closeEditor();toggleBurner(Number(kind.split(':')[2]));}else if(kind?.startsWith('cabinet:')){closeEditor();toggleCabinet(kind.slice(8));}else if(kind?.startsWith('door:')){closeEditor();dining.toggleDoor(kind.slice(5));}else if(kind?.startsWith('blind:')){closeEditor();toggleBlind(kind.slice(6));}else if(kind)openEditor(kind,{x:e.clientX,y:e.clientY});else closeEditor();}});
 canvas.addEventListener('pointercancel',e=>{pointers.delete(e.pointerId);gesture=null;});
 for(const [kind,items] of [['time',options.time]]){const target=document.querySelector(`#${kind}`);for(const item of items){const button=document.createElement('button');button.type='button';button.className='choice';button.dataset.value=item.id;button.title=item.id==='night'?'Interior lighting after dark':item.id==='morning'?'Representative spring/autumn morning; rear window approximately ESE':'Representative spring/autumn solar noon; southern sun';button.innerHTML=`${preview(kind,item)}<span>${item.name}</span>`;button.onclick=()=>choose(kind,item.id);target.append(button);}}
 
@@ -695,14 +696,33 @@ const views={
  cooking:{position:[-.85,1.68,3.3],target:[1.03,1.35,1.0],fov:64},
  back:{position:[0,1.64,-.9],target:[-.25,1.2,4.8]},
  dining:{position:[-.9,1.7,1.95],target:[-.4,1,4.8]},
- whole:{position:[5.4,6.9,9.7],target:[-.4,.7,1.7]},
+ whole:{position:[.25,1.8,4.55],target:[-.15,1.25,-1.55],fov:67},
  top:{position:[-.4,9,1.77],target:[-.4,0,1.75]}
 };
 function view(name){closeEditor();const v=views[name];camera.fov=v.fov||58;camera.updateProjectionMatrix();camera.position.set(...v.position);controls.target.set(...v.target);controls.update();document.querySelectorAll('[data-view]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.view===name));}
 document.querySelectorAll('[data-view]').forEach(b=>b.onclick=()=>view(b.dataset.view));
 function move(direction){const f=new THREE.Vector3();camera.getWorldDirection(f);f.y=0;if(f.length()<.1)f.set(0,0,-1);f.normalize();const side=new THREE.Vector3().crossVectors(f,new THREE.Vector3(0,1,0));const delta=(direction==='left'||direction==='right'?side:f).multiplyScalar(direction==='left'||direction==='back'?-.14:.14);const next=camera.position.clone().add(delta);next.z=THREE.MathUtils.clamp(next.z,-1.5,5.05);next.x=THREE.MathUtils.clamp(next.x,next.z<1.8?-1.15:-2.08,1.21);delta.copy(next).sub(camera.position);camera.position.add(delta);controls.target.add(delta);controls.update();}
 document.querySelectorAll('[data-move]').forEach(b=>{let timer;b.onpointerdown=e=>{e.preventDefault();move(b.dataset.move);timer=setInterval(()=>move(b.dataset.move),100);b.setPointerCapture(e.pointerId);};b.onpointerup=b.onpointercancel=b.onlostpointercapture=()=>clearInterval(timer);});
-canvas.addEventListener('keydown',e=>{const dir={ArrowUp:'forward',w:'forward',ArrowDown:'back',s:'back',ArrowLeft:'left',a:'left',ArrowRight:'right',d:'right'}[e.key];if(dir){e.preventDefault();move(dir);}});
+/** Turn the viewing direction in place, preserving camera position and pitch. */
+function turn(direction){const offset=controls.target.clone().sub(camera.position);offset.applyAxisAngle(new THREE.Vector3(0,1,0),direction==='left'?Math.PI/2:-Math.PI/2);controls.target.copy(camera.position).add(offset);controls.update();document.querySelectorAll('[data-view]').forEach(b=>b.setAttribute('aria-pressed','false'));}
+const presetKeys=['entry','sink','countertop','hob','cooking','back','whole','top'];
+const movementKeys={ArrowUp:'forward',w:'forward',ArrowDown:'back',s:'back',ArrowLeft:'left',a:'left',ArrowRight:'right',d:'right'};
+document.querySelectorAll('[data-turn]').forEach(b=>b.onclick=()=>turn(b.dataset.turn));
+document.querySelector('#reset-view').onclick=()=>view('entry');
+canvas.addEventListener('keydown',e=>{if(e.altKey||e.ctrlKey||e.metaKey)return;const key=e.key.length===1?e.key.toLowerCase():e.key;const dir=movementKeys[key];if(dir){e.preventDefault();move(dir);}else if(key==='q'||key==='e'){e.preventDefault();turn(key==='q'?'left':'right');}else if(key==='r'){e.preventDefault();view('entry');}else if(key==='i'){e.preventDefault();view('sink');revealWater();document.querySelector('#water-tap').focus();}else if(presetKeys[Number(key)-1]){e.preventDefault();view(presetKeys[Number(key)-1]);}});
+const shortcutTip=document.querySelector('#shortcut-tip');
+/** Show shortcuts on hover and keyboard focus without intercepting scene input. */
+function shortcut(button,label){button.title=label+' (scene focused)';button.setAttribute('aria-description',button.title);button.addEventListener('pointerenter',show);button.addEventListener('focus',show);button.addEventListener('pointerleave',hide);button.addEventListener('blur',hide);
+ /** Position the shared tooltip inside the scene beside its current control. */
+ function show(){shortcutTip.textContent=button.title;shortcutTip.hidden=false;const box=button.getBoundingClientRect(),main=canvas.getBoundingClientRect();shortcutTip.style.left=Math.max(8,Math.min(box.left-main.left,main.width-shortcutTip.offsetWidth-8))+'px';shortcutTip.style.top=(box.top-main.top>main.height/2?box.top-main.top-shortcutTip.offsetHeight-8:box.bottom-main.top+8)+'px';}
+ /** Dismiss the tooltip when its control loses hover or focus. */
+ function hide(){shortcutTip.hidden=true;}
+}
+for(const b of document.querySelectorAll('[data-view]'))shortcut(b,b.textContent+' · '+(presetKeys.indexOf(b.dataset.view)+1));
+for(const b of document.querySelectorAll('[data-move]')){shortcut(b,b.getAttribute('aria-label')+' · '+({forward:'↑ / W',back:'↓ / S',left:'← / A',right:'→ / D'}[b.dataset.move]));b.addEventListener('click',e=>{if(e.detail===0)move(b.dataset.move);});}
+for(const b of document.querySelectorAll('[data-turn]'))shortcut(b,b.getAttribute('aria-label')+' 90° · '+(b.dataset.turn==='left'?'Q':'E'));
+shortcut(document.querySelector('#reset-view'),'Reset view · R');
+
 new ResizeObserver(()=>{const r=canvas.parentElement.getBoundingClientRect();renderer.setSize(r.width,r.height,false);camera.aspect=r.width/r.height;camera.updateProjectionMatrix();}).observe(canvas.parentElement);
 const structuralWalls=[rearWall,rightWall,...room.children.filter(o=>o.isMesh&&o.material===paint&&o.geometry.parameters.width===dimensions.wallThickness),...dining.wallGroups];
 /** Apply view-only wall visibility without changing the selected paint or exterior material. */
