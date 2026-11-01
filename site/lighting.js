@@ -12,7 +12,7 @@ export function normalizeTime(time){
 
 /** Return a phase's clock setting independently of room geometry. */
 export function clockMinutesForTime(time){
-  return {morning:450,noon:720,night:1260}[normalizeTime(time)];
+  return {morning:450,noon:795,night:1260}[normalizeTime(time)];
 }
 
 /** Resolve room-specific sun geometry and appearance for a common day phase. */

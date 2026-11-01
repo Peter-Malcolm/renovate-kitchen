@@ -23,3 +23,5 @@ THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
+
+public-floorplan-model.svg is an original agent-authored schematic of the procedural model footprint. It does not embed or reproduce the source floorplan image. Dimensions are illustrative and unverified.

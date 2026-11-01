@@ -7,7 +7,8 @@ const approvedPhotos={
  'assets/kitchen-hob-detail.jpg':'62d18912456bfbb4277bbfcf757d730c40585c4d1806202af2c24fff62ee5e69',
  'assets/kitchen-extractor-detail.jpg':'1675e4889d7e644406890571d9407ff7e4703b248005a1cd547864e6783c7306'
 };
-const allowed=[...Object.keys(approvedPhotos),'THIRD_PARTY_NOTICES.txt','app.js','assets/OrbitControls.js','assets/three.module.js','dimensions.js','flood-visual.js','flood.js','dining.js','furniture-wood.js','index.html','lighting.js','stainless.js','surfaces.js','viewpoints.js','turning.js','water.js'];
+const approvedPlans={'assets/public-floorplan-model.svg':'8c96a5bb41546641cd05609b12cc0e15500968b61b5b6c283baf5924c50f93ee'};
+const allowed=[...Object.keys(approvedPhotos),...Object.keys(approvedPlans),'THIRD_PARTY_NOTICES.txt','app.js','assets/OrbitControls.js','assets/three.module.js','dimensions.js','flood-visual.js','flood.js','dining.js','furniture-wood.js','index.html','lighting.js','stainless.js','surfaces.js','viewpoints.js','handle-clearance.js','turning.js','water.js'];
 /** Inventory the deployment recursively and reject links to files outside it. */
 function inventory(directory,prefix=''){
  return fs.readdirSync(directory,{withFileTypes:true}).flatMap(entry=>{
@@ -53,6 +54,13 @@ for(const file of files){
   continue;
  }
  const text=buffer.toString('utf8');
+ if(Object.hasOwn(approvedPlans,file)){
+  assert.equal(hash,approvedPlans[file],'Plan must match its reviewed original model schematic');
+  assert.ok(!/<(?:script|image|foreignObject|metadata|use|iframe)\b|\b(?:href|on[a-z]+)\s*=|url\s*\(|<!DOCTYPE|<!ENTITY/i.test(text),'Unsafe or embedded SVG content');
+  assert.ok(!/https?:\/\//i.test(text.replace('http://www.w3.org/2000/svg','')),'External SVG reference');
+  assert.ok(!/rightmove|postcode|latitude|longitude|[A-Z]{1,2}\d[A-Z\d]?\s+\d[A-Z]{2}\b/i.test(text),'Identifying plan annotation');
+ }
+
  const withoutApprovedReferences=Object.keys(approvedPhotos).reduce((value,name)=>value.replaceAll(name,''),text);
  assert.ok(!/\.(?:jpg|jpeg|png|webp|gif|heic|mp4)(?:["'\s?]|$)/i.test(withoutApprovedReferences),'Raster or video reference in '+file);
  assert.ok(!/appgprj_|chatgpt\.site|oaiusercontent|source_repository_credential|Bearer\s+[A-Za-z0-9]|BEGIN .*PRIVATE KEY/i.test(text),'Private hosting or credential marker in '+file);

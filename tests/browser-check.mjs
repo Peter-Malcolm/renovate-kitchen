@@ -1,3 +1,6 @@
+import {handleClearance} from './handle-clearance.mjs';
+import {hobInteraction} from './hob-interaction.mjs';
+import {sinkInteraction} from './sink-interaction.mjs';
 import {sinkGeometry} from './sink-geometry.mjs';
 import {createServer} from 'node:http';
 import {readFile} from 'node:fs/promises';
@@ -13,8 +16,10 @@ const server=createServer(async(req,res)=>{try{const name=new URL(req.url,'http:
 await new Promise(r=>server.listen(0,'127.0.0.1',r));let browser;
 try{
  browser=await chromium.launch({headless:true,args:['--no-sandbox','--use-angle=swiftshader','--enable-unsafe-swiftshader']});const page=await browser.newPage({viewport:{width:960,height:720}});const errors=[];page.on('pageerror',e=>errors.push(e.message));page.on('response',r=>{if(r.status()>=400)errors.push(r.status()+' '+r.url());});
- await page.route('**/app.js?*',async route=>{let body=await readFile(root+'/app.js','utf8');body=body.replace('renderer.render(scene,camera);','/* GPU drawing suppressed for geometry and DOM checks. */').replace('renderer.shadowMap.enabled=true','renderer.shadowMap.enabled=false').replace('Math.min(devicePixelRatio,2)','0.4');await route.fulfill({contentType:'text/javascript',body});});
+ await page.route('**/app.js?*',async route=>{let body=await readFile(root+'/app.js','utf8');body=body.replace('window.kitchenModel={','window.kitchenModel={animateSinkWater,').replace('renderer.render(scene,camera);','/* GPU drawing suppressed for geometry and DOM checks. */').replace('renderer.shadowMap.enabled=true','renderer.shadowMap.enabled=false').replace('Math.min(devicePixelRatio,2)','0.4');await route.fulfill({contentType:'text/javascript',body});});
  await page.goto('http://127.0.0.1:'+server.address().port);await page.waitForFunction(()=>window.kitchenModel);console.log('Loaded fork model');
+ const clearance=await page.evaluate(handleClearance);for(const result of clearance){assert.ok(result.stopped>0&&result.stopped<.4,JSON.stringify(result));assert.equal(result.closed,0);assert.equal(result.released,1);}console.log({handleClearance:clearance});
+await sinkInteraction(page);
  // Check the finished quartz surrounds meet both sides of the resized sink after room widening.
  const surround=await page.evaluate(async()=>{const {Box3}=await import('./assets/three.module.js');const m=kitchenModel,s=m.scene.getObjectByName('Ceramic one-and-a-half bowl sink with right drainer');m.scene.updateMatrixWorld(true);const left=new Box3().setFromObject(m.scene.getObjectByName('Left sink worktop surround')),right=new Box3().setFromObject(m.scene.getObjectByName('Right sink worktop surround'));return {left:left.max.x,right:right.min.x,centre:s.getWorldPosition(s.position.clone()).x};});assert.ok(Math.abs(surround.left-(surround.centre-.485))<.001);assert.ok(Math.abs(surround.right-(surround.centre+.485))<.001);
 
@@ -45,17 +50,17 @@ try{
 
 
  // Check navigation buttons and scene shortcuts turn smoothly without moving the camera.
- await page.locator('[data-view="whole"]').click();
+ await page.evaluate(()=>kitchenModel.view('whole'));
  const whole=await page.evaluate(()=>({position:kitchenModel.camera.position.toArray(),direction:kitchenModel.camera.getWorldDirection(kitchenModel.camera.position.clone()).toArray()}));assert.ok(whole.position[2]>4&&whole.position[1]<2&&whole.direction[2]<-.95);
  const furnitureClearance=await page.evaluate(async()=>{const {Box3}=await import('./assets/three.module.js');const m=kitchenModel;m.scene.updateMatrixWorld(true);return ['Grey and oak dresser','Existing 180 cm table','Current chairs'].map(name=>{const box=new Box3().setFromObject(m.scene.getObjectByName(name));return {name,min:box.min.toArray(),max:box.max.toArray(),distance:box.distanceToPoint(m.camera.position)};});});console.log({furnitureClearance});assert.ok(furnitureClearance.every(b=>b.distance>.15));
 
  // Check pointer and Q/E holds turn progressively in place and stop on release.
  const turnButton=page.locator('[data-turn="left"]');await turnButton.hover();await page.mouse.down();await page.waitForTimeout(250);const partial=await page.evaluate(()=>kitchenModel.camera.quaternion.toArray());await page.waitForTimeout(250);await page.mouse.up();
  const left=await page.evaluate(()=>({position:kitchenModel.camera.position.toArray(),quaternion:kitchenModel.camera.quaternion.toArray()}));assert.ok(left.position.every((v,i)=>Math.abs(v-whole.position[i])<1e-10));assert.ok(left.quaternion.some((v,i)=>Math.abs(v-partial[i])>.01));await page.waitForTimeout(150);assert.ok((await page.evaluate(()=>kitchenModel.camera.quaternion.toArray())).every((v,i)=>Math.abs(v-left.quaternion[i])<1e-10));
- await page.locator('#scene').focus();await page.keyboard.press('7');await page.keyboard.down('q');await page.waitForTimeout(400);await page.keyboard.up('q');const keyed=await page.evaluate(()=>kitchenModel.camera.quaternion.toArray());await page.waitForTimeout(150);assert.ok((await page.evaluate(()=>kitchenModel.camera.quaternion.toArray())).every((v,i)=>Math.abs(v-keyed[i])<1e-10));
+ await page.evaluate(()=>kitchenModel.view('whole'));await page.locator('#scene').focus();await page.keyboard.down('q');await page.waitForTimeout(400);await page.keyboard.up('q');const keyed=await page.evaluate(()=>kitchenModel.camera.quaternion.toArray());await page.waitForTimeout(150);assert.ok((await page.evaluate(()=>kitchenModel.camera.quaternion.toArray())).every((v,i)=>Math.abs(v-keyed[i])<1e-10));
  await page.keyboard.down('e');await page.waitForTimeout(400);await page.keyboard.up('e');assert.ok(await page.evaluate(()=>kitchenModel.camera.getWorldDirection(kitchenModel.camera.position.clone()).z)<-.95);
  await page.locator('[data-turn="left"]').focus();assert.ok((await page.locator('#shortcut-tip').textContent()).includes('Q'));const focused=await page.evaluate(()=>kitchenModel.camera.quaternion.toArray());await page.keyboard.press('q');assert.ok((await page.evaluate(()=>kitchenModel.camera.quaternion.toArray())).every((v,i)=>Math.abs(v-focused[i])<1e-10));
- await page.locator('#scene').focus();await page.keyboard.press('r');assert.equal(await page.locator('[data-view="entry"]').getAttribute('aria-pressed'),'true');await page.keyboard.press('ArrowUp');assert.ok(await page.evaluate(()=>kitchenModel.camera.position.z)<1.15);
+ await page.locator('#scene').focus();await page.keyboard.press('r');assert.ok((await page.evaluate(()=>kitchenModel.camera.position.toArray())).every((value,index)=>Math.abs(value-[0,1.65,1.15][index])<1e-10));assert.equal(await page.locator('.toolbar [aria-pressed="true"]').count(),0);await page.keyboard.press('ArrowUp');assert.ok(await page.evaluate(()=>kitchenModel.camera.position.z)<1.15);
  // Check the water Easter egg is undisclosed until direct scene interaction.
  assert.equal(await page.locator('#water-open').count(),0);assert.equal(await page.locator('#water-panel').isVisible(),false);assert.equal(await page.locator('#water-reset').isVisible(),false);
  // Check deliberate keyboard inspection opens usable sink controls and Escape leaves them dismissed.
@@ -91,15 +96,17 @@ try{
  await page.locator('#water-swivel').click();await page.locator('#water-plug-small').click();const before=await page.evaluate(()=>kitchenModel.sinkWater.bowls.main.litres);await page.waitForTimeout(600);assert.equal(await page.evaluate(()=>kitchenModel.sinkWater.bowls.main.litres),before);assert.ok(await page.evaluate(()=>kitchenModel.sinkWater.bowls.small.litres)>0);
  assert.equal(await page.locator('#water-reset').isVisible(),false);await page.evaluate(async()=>{const {stepWater}=await import('./water.js');stepWater(kitchenModel.sinkWater,30);kitchenModel.syncWater();});assert.equal(await page.locator('#water-reset').isVisible(),true);
  await page.locator('#water-plug-small').click();const full=await page.evaluate(()=>kitchenModel.sinkWater.bowls.small.litres);await page.waitForTimeout(600);assert.ok(await page.evaluate(()=>kitchenModel.sinkWater.bowls.small.litres)<full);
- await page.locator('#water-reset').click();assert.equal(await page.locator('#water-reset').isVisible(),false);assert.equal(await page.evaluate(()=>kitchenModel.sinkWater.tapOn),false);assert.ok(await page.evaluate(()=>Object.values(kitchenModel.sinkWater.bowls).every(b=>!b.plugged&&b.litres===0)));
+ /** Check the mop button clears only floor spill without changing the running tap or bowl state. */
+ const mopped=await page.evaluate(()=>{const m=kitchenModel,before=structuredClone(m.sinkWater);document.querySelector('#water-reset').click();return {before,after:structuredClone(m.sinkWater),hidden:m.waterReset.hidden};});assert.ok(mopped.hidden);assert.equal(mopped.after.spilled,0);assert.equal(mopped.after.tapOn,mopped.before.tapOn);assert.deepEqual(mopped.after.bowls,mopped.before.bowls);assert.equal(mopped.after.target,mopped.before.target);
+ await page.locator('#water-tap').click();
  await page.locator('#water-close').click();await page.evaluate(()=>kitchenModel.openEditor('paint'));assert.equal(await page.locator('#item-title').textContent(),'Paint colour');assert.equal(await page.locator('#item-choices [data-kind="exterior"]').count(),0);assert.ok(await page.locator('#item-choices [data-kind="paint"]').count()>0);
- await page.locator('#wall-view').click();assert.ok(await page.locator('#item-choices [data-kind="wallView"]').count()===3);const paint=await page.evaluate(()=>kitchenModel.state.paint);await page.locator('[data-kind="wallView"][data-value="hide"]').click();assert.equal(await page.evaluate(()=>kitchenModel.state.paint),paint);assert.ok(await page.evaluate(()=>{kitchenModel.updateWallVisibility();return kitchenModel.structuralWalls.every(w=>!w.visible);}));
+ await page.evaluate(()=>kitchenModel.openEditor('wallView'));assert.ok(await page.locator('#item-choices [data-kind="wallView"]').count()===3);const paint=await page.evaluate(()=>kitchenModel.state.paint);await page.locator('[data-kind="wallView"][data-value="hide"]').click();assert.equal(await page.evaluate(()=>kitchenModel.state.paint),paint);assert.ok(await page.evaluate(()=>{kitchenModel.updateWallVisibility();return kitchenModel.structuralWalls.every(w=>!w.visible);}));
  await page.evaluate(()=>{kitchenModel.choose('wallView','auto');kitchenModel.choose('table','oval');kitchenModel.choose('tableExtended','on');kitchenModel.choose('upstand','none');});assert.equal(await page.evaluate(()=>kitchenModel.state.tableExtended),true);assert.equal(await page.evaluate(()=>kitchenModel.state.tiles),'two');
  await page.evaluate(()=>kitchenModel.openEditor('tiles'));assert.deepEqual(await page.locator('#item-choices section h3').allTextContents(),['Upstand','Metro tiles','Grout colour']);assert.equal(await page.locator('[data-kind="grout"]').count(),3);await page.locator('[data-kind="grout"][data-value="silver"]').click();assert.equal(await page.evaluate(()=>kitchenModel.state.grout),'silver');await page.locator('#close-item').click();
- // Check references expose only the two approved photos and clearly label other categories.
+ // Check references expose the two approved photos, the pseudonymised plan and all evidence categories.
  await page.locator('#public-reference-open').click();
- assert.deepEqual(await page.locator('#public-reference section h3').allTextContents(),['Photos','Measurements','Videos','Floorplan']);
- assert.equal(await page.locator('#public-reference img').count(),2);
+ assert.deepEqual(await page.locator('#public-reference section h3').allTextContents(),['Photos','Measurements','Videos','Floorplan','Receipts','Meaningful items']);
+ assert.equal(await page.locator('#public-reference img').count(),3);
  for(const image of await page.locator('#public-reference img').all()){
   await image.scrollIntoViewIfNeeded();
   await image.evaluate(image=>image.decode());
@@ -109,6 +116,7 @@ try{
  assert.equal(await page.locator('#public-reference').isVisible(),false);
 
 
+ await hobInteraction(page);
  await page.locator('[data-view="hob"]').click();
  // Check actual modeled knob hit zones independently switch their own flame and rotate.
  const knobHits=await page.evaluate(async()=>{const {Vector3}=await import('./assets/three.module.js');const m=kitchenModel;m.scene.updateMatrixWorld(true);m.camera.updateMatrixWorld(true);const rect=document.querySelector('#scene').getBoundingClientRect();return m.burnerKnobs.map(knob=>{const v=knob.getWorldPosition(new Vector3());v.y+=.019;v.project(m.camera);const x=rect.left+(v.x+1)*rect.width/2,y=rect.top+(1-v.y)*rect.height/2;return {x,y,hit:m.pick(x,y)};});});
@@ -120,7 +128,7 @@ try{
 
  // Check supported chimney contact and narrow appliance reveals while doors are shut.
  const contacts=await page.evaluate(async()=>{const {Box3}=await import('./assets/three.module.js');const m=kitchenModel;m.scene.updateMatrixWorld(true);const hood=new Box3().setFromObject(m.hood),chimney=new Box3().setFromObject(m.hoodChimney),door=new Box3().setFromObject(m.microwaveLeaf),upper=new Box3().setFromObject(m.scene.getObjectByName('Microwave upper fascia')),lower=new Box3().setFromObject(m.scene.getObjectByName('Microwave lower fascia'));return {chimneyCanopyGap:chimney.min.y-hood.max.y,upperDoorReveal:upper.min.y-door.max.y,lowerDoorReveal:door.min.y-lower.max.y};});assert.ok(Math.abs(contacts.chimneyCanopyGap)<.001);assert.ok(contacts.upperDoorReveal>0&&contacts.upperDoorReveal<.004);assert.ok(contacts.lowerDoorReveal>0&&contacts.lowerDoorReveal<.004);console.log({contacts});
- assert.equal(await page.locator('[data-view="dining"]').count(),0);assert.equal(await page.locator('[data-view="back"]').textContent(),'Dining room');
+ assert.equal(await page.locator('[data-view="dining"]').count(),1);assert.equal(await page.locator('[data-view="back"]').count(),0);
  await page.evaluate(()=>kitchenModel.openEditor('art'));assert.equal(await page.locator('#item-title').textContent(),'Wall prints');assert.ok((await page.locator('[data-kind="art"]').allTextContents()).every(t=>/2 prints|3 prints/.test(t)));await page.locator('#close-item').click();
  await page.locator('[data-view="countertop"]').click();await page.setViewportSize({width:390,height:844});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
  assert.deepEqual(errors,[]);console.log(JSON.stringify({realRaycastBodyAndLever:true,streamInsideMainBowl:flow,independentBowls:true,draining:true,floodReset:true,separateWallMenus:true,existingControls:true,errors,rendering:'suppressed; not visual GPU acceptance'}));

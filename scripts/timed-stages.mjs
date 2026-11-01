@@ -63,7 +63,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   const audit = {label: 'public-audit', args: ['scripts/audit-public.mjs']};
   const browser = {label: 'browser', args: ['tests/browser-check.mjs']};
   const commands = {
-    check: [unit, audit, browser],
+    check: [unit, audit, browser, {label: 'viewpoints', args: ['tests/viewpoints.mjs']}, {label: 'startup', args: ['tests/startup.mjs']}],
     unit: [unit],
     'public-audit': [audit],
     browser: [browser],

@@ -11,8 +11,8 @@ const room={bearing:0,target:[2,3,4],distance:10,presets:{
 /** Check morning sets 07:30 while other phases and legacy day selections retain their clock times. */
 test('phase compatibility and clock',()=>{
  assert.equal(normalizeTime('day'),'noon');assert.equal(normalizeTime('unknown'),'noon');
- assert.deepEqual(['morning','noon','night'].map(clockMinutesForTime),[450,720,1260]);
- assert.equal(clockMinutesForTime('day'),720);
+ assert.deepEqual(['morning','noon','night'].map(clockMinutesForTime),[450,795,1260]);
+ assert.equal(clockMinutesForTime('day'),795);
 });
 
 /** Check room orientation rotates sunlight around the configured target without changing its height. */

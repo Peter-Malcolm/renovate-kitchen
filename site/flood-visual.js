@@ -24,7 +24,7 @@ export function createFloodVisual(THREE,map,material){
  const arrival=new THREE.DataTexture(field,width,height,THREE.RGBAFormat,THREE.FloatType);arrival.minFilter=arrival.magFilter=THREE.LinearFilter;arrival.needsUpdate=true;
  const allowed=new THREE.DataTexture(mask,width,height);allowed.needsUpdate=true;
  const uniforms={floodArrival:{value:arrival},floodProgress:{value:0},floodFeather:{value:.0025}};
- const film=material.clone();film.map=allowed;film.opacity=.36;film.depthWrite=false;film.roughness=.08;
+ const film=material.clone();film.map=allowed;film.color.set('#729b9e');film.opacity=.42;film.depthWrite=false;film.roughness=.08;
  film.onBeforeCompile=shader=>{Object.assign(shader.uniforms,uniforms);shader.fragmentShader='uniform sampler2D floodArrival; uniform float floodProgress; uniform float floodFeather;\n'+shader.fragmentShader;shader.fragmentShader=shader.fragmentShader.replace('#include <alphamap_fragment>','#include <alphamap_fragment>\nfloat arrivalTime=texture2D(floodArrival,vMapUv).r; diffuseColor.a *= 1.0-smoothstep(floodProgress-floodFeather,floodProgress+floodFeather,arrivalTime);');};
  const mesh=new THREE.Mesh(new THREE.PlaneGeometry(width*size,height*size),film);mesh.rotation.x=-Math.PI/2;mesh.position.set(minX+width*size/2,0,minZ+height*size/2);mesh.scale.y=-1;mesh.material.side=THREE.DoubleSide;mesh.userData.pickThrough=true;
  mesh.userData.cells=order.map(i=>map.cells[i]);mesh.userData.update=count=>{uniforms.floodProgress.value=count/map.cells.length;uniforms.floodFeather.value=Math.max(.00015,Math.min(.0025,count/map.cells.length*.08));};

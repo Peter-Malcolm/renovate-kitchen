@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="600" height="850" viewBox="0 0 600 850" role="img" aria-labelledby="title desc">
+<title id="title">Pseudonymised kitchen and dining model plan</title>
+<desc id="desc">Two connected rooms with an offset left wall. Model dimensions are illustrative and unverified. Only the modeled kitchen and dining footprint is shown.</desc>
+<rect width="600" height="850" fill="#faf8f2"/>
+<g font-family="sans-serif" fill="#283b35" text-anchor="middle">
+<text x="300" y="38" font-size="22">Kitchen and dining</text>
+<text x="300" y="64" font-size="14">Pseudonymised model plan</text>
+<path d="M199 100 H481 V460 H479 V810 H119 V460 H199 Z" fill="#ece5d6" stroke="#354c43" stroke-width="4"/>
+<path d="M199 460 H479" fill="none" stroke="#89978e" stroke-width="2" stroke-dasharray="7 7"/>
+<text x="340" y="265" font-size="25">Kitchen</text>
+<text x="340" y="295" font-size="16">2.82 × 3.60 m</text>
+<text x="299" y="620" font-size="25">Dining</text>
+<text x="299" y="650" font-size="16">3.60 × 3.50 m</text>
+<text x="300" y="836" font-size="13">Dimensions illustrative / unverified · Internal model footprint only</text>
+</g>
+</svg>

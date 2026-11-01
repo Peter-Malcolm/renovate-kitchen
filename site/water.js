@@ -1,9 +1,9 @@
-// Illustrative volumes and flow rates; not a plumbing specification.
-export const waterDefaults = Object.freeze({capacities: Object.freeze({main: 20, small: 6}), inflow: .24, drain: .4});
+// Illustrative bowl capacities and 20 L/min demo flow; not manufacturer measurements.
+export const waterDefaults = Object.freeze({capacities: Object.freeze({main: 20, small: 6}), inflow: 1/3, drain: .4});
 
 /** Create independent bowl states and a shared tap, without touching room options. */
 export function createWaterState() {
-  return {tapOn: false, target: 'small', bowls: {main: {plugged: false, litres: 0, spilling: false}, small: {plugged: false, litres: 0, spilling: false}}, spilled: 0, drained: 0, supplied: 0, spilling: false};
+  return {tapOn: false, target: 'small', bowls: {main: {plugged: false, litres: 0, spilling: false}, small: {plugged: false, litres: 0, spilling: false}}, spilled: 0, mopped: 0, drained: 0, supplied: 0, spilling: false};
 }
 
 /** Route incoming water to the selected bowl while both open drains keep operating. */
@@ -30,4 +30,10 @@ export function resetWater(state) {
   const target=state.target;
   Object.assign(state,createWaterState());
   state.target=target;
+}
+
+/** Remove only floor water, preserving tap, plugs and both retained bowl volumes. */
+export function mopSpill(state) {
+  state.mopped += state.spilled;
+  state.spilled = 0;
 }

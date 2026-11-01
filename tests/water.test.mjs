@@ -1,14 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {appRoot} from '../scripts/app-root.mjs';
-const {createWaterState,stepWater,resetWater,waterDefaults} = await import(new URL('water.js', appRoot));
+const {createWaterState,stepWater,resetWater,mopSpill,waterDefaults} = await import(new URL('water.js', appRoot));
 const {countertopView} = await import(new URL('viewpoints.js', appRoot));
 
 /** Check the small bowl fills gradually and spills only after reaching its capacity. */
 test('gradual fill and overflow boundary',()=>{
  const state=createWaterState();state.tapOn=true;state.bowls.small.plugged=true;
  stepWater(state,10);assert.ok(state.bowls.small.litres>0&&state.bowls.small.litres<6);assert.equal(state.spilled,0);
- stepWater(state,15);assert.equal(state.bowls.small.litres,6);assert.equal(state.spilled,0);
+ stepWater(state,8);assert.equal(state.bowls.small.litres,6);assert.equal(state.spilled,0);
  stepWater(state,1);assert.ok(state.spilled>0);assert.equal(state.bowls.small.spilling,true);assert.equal(state.bowls.main.litres,0);
 });
 /** Check switching the target preserves retained water and only fills the newly targeted bowl. */
@@ -58,4 +58,20 @@ test('fridge countertop view',()=>{
  assert.ok(ty>.9&&ty<1.15&&ty<y,'Aim slightly above the worktop and below eye height');
  assert.ok(tz<0&&z-tz>2.5,'Look along the counter toward the sink end');
  assert.ok(countertopView.fov>=45&&countertopView.fov<=65,'Keep a natural interior field of view');
+});
+
+/** Check the demo tap fills six litres in eighteen seconds and twenty litres in sixty seconds. */
+test('20 litre per minute demo flow',()=>{
+ for(const [target,seconds,litres] of [['small',18,6],['main',60,20]]){
+  const state=createWaterState();state.target=target;state.tapOn=true;state.bowls[target].plugged=true;
+  stepWater(state,seconds);assert.equal(state.bowls[target].litres,litres);assert.equal(state.spilled,0);
+ }
+});
+/** Check mopping preserves bowl water and controls, accounts for removed water, and permits renewed overflow. */
+test('mop only floor spill',()=>{
+ const state=createWaterState();state.tapOn=true;state.bowls.small.plugged=true;stepWater(state,30);
+ const before=structuredClone(state);mopSpill(state);
+ assert.deepEqual(state.bowls,before.bowls);assert.equal(state.tapOn,before.tapOn);assert.equal(state.target,before.target);
+ assert.equal(state.spilled,0);assert.equal(state.mopped,before.spilled);stepWater(state,3);assert.equal(state.spilled,1);
+ assert.ok(Math.abs(state.supplied-state.bowls.main.litres-state.bowls.small.litres-state.drained-state.spilled-state.mopped)<1e-8);
 });

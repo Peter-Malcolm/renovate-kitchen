@@ -68,6 +68,20 @@ export async function cabinetGeometry() {
     const bottom = new Box3().setFromObject(part).min.y;
     if (Math.abs(bottom-fridgeTop)>1e-6) failures.push({name:'Tall crown / fridge top',gap:bottom-fridgeTop});
   }
+  // Check the photo-observed terminal support reaches the floor and quartz underside.
+  const endPanel = bounds('Floor-standing left worktop end panel');
+  const worktop = bounds('Left continuous worktop');
+  if (Math.abs(endPanel.min.y) > 1e-6 || Math.abs(endPanel.max.y - worktop.min.y) > 1e-6) failures.push({name:'Terminal panel support',floor:endPanel.min.y,gap:worktop.min.y-endPanel.max.y});
+  if (endPanel.min.x < worktop.min.x-1e-6 || endPanel.max.x > worktop.max.x+1e-6 || worktop.max.z <= endPanel.max.z || worktop.max.z-endPanel.max.z > .06) failures.push({name:'Terminal worktop coverage'});
+  // Check wall-unit pulls remain low on the meeting stiles, independent of base-unit pulls.
+  for (const name of ['Left wall cupboard, two doors', 'Wall cupboard beside extractor, two doors', 'Wall cupboard beside tower, one door']) {
+    m.scene.getObjectByName(name).traverse(part => {
+      if (part.geometry?.type !== 'TubeGeometry') return;
+      part.geometry.computeBoundingBox();
+      const grip = part.geometry.boundingBox;
+      if (grip.max.y >= 0 || grip.min.y <= -.385) failures.push({name,handleBounds:[grip.min.y,grip.max.y]});
+    });
+  }
   const rear = bounds('Rear continuous kickboard');
   for (const name of ['Left continuous kickboard', 'Right continuous kickboard including tall units']) {
     const side = bounds(name);

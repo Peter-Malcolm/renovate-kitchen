@@ -1,6 +1,6 @@
 import * as THREE from 'three';
-import {dimensions} from './dimensions.js';
-import {furnitureWoodUV} from './furniture-wood.js';
+import {dimensions} from './dimensions.js?v=20261101-release42';
+import {furnitureWoodUV} from './furniture-wood.js?v=20261101-release42';
 
 export function addDining({scene,box,cylinder,material,paint,white,silver,dark,oak,wood,surfaces,glass,rollerBlind}) {
   const group=new THREE.Group();
