@@ -1,10 +1,23 @@
+import {createTurnMotion,bindTurnControls} from './turning.js';
+import {createFloodVisual} from './flood-visual.js';
+import {createFloodMap, floodCoverage} from './flood.js';
+import {timeOptions,clockMinutesForTime,lightingForTime,applyLighting,createRoomReflectionEnvironment} from './lighting.js';
 import * as THREE from 'three';
 import {OrbitControls} from './assets/OrbitControls.js';
 import {addDining} from './dining.js?v=40';
 import {dimensions} from './dimensions.js';
 import {createSurfaces} from './surfaces.js';
+import {createBrushedStainless,cloneBrushedStainless} from './stainless.js';
 import {createWaterState, stepWater, resetWater, waterDefaults} from './water.js?v=40';
 import {countertopView} from './viewpoints.js?v=40';
+
+
+// Estimated orientation and representative seasonal lighting remain room-specific.
+const roomLighting={bearing:105,target:[0,1,1.4],distance:10,presets:{
+ morning:{azimuth:115,elevation:20,ambient:.75,ambientColor:'#f4dfc5',sun:2.4,sunColor:'#ffe0b1',fill:.28,background:'#e8dccb',environment:.45,exposure:1.08},
+ noon:{azimuth:180,elevation:36.6,ambient:1.05,ambientColor:'#e9f1ff',sun:2.9,sunColor:'#fff7e8',fill:.42,background:'#e3e8eb',environment:.6,exposure:1.08},
+ night:{azimuth:180,elevation:36.6,ambient:.27,ambientColor:'#e9f1ff',sun:0,sunColor:'#fff7e8',fill:.12,background:'#202b38',environment:.2,exposure:1.04},
+}};
 
 const options = {
   wallView:[{id:'auto',name:'Automatic cutaway',color:'#9fae9d'},{id:'show',name:'Show walls',color:'#c9bfae'},{id:'hide',name:'Hide walls',color:'#e8e5d9'}],
@@ -14,7 +27,7 @@ const options = {
   paint: [{id:'stone',name:'Soft warm stone',color:'#d2cbbb'},{id:'chalk',name:'Chalky off-white',color:'#e9e6dc'},{id:'sage',name:'Existing pale sage',color:'#b8c0ad'}],
   upstand: [{id:'white',name:'Worktop white',color:'#eeeee7'},{id:'none',name:'No upstand',color:'#f8f7ef'}],
   tiles: ['zero','one','two','three','four'].map((id,n)=>({id,name:n===0?'No tiles':n+' full courses',color:'#f4f3ee'})),
-  time: [{id:'morning',name:'Morning',color:'#f2dcc1'},{id:'noon',name:'Noon',color:'#e3e9e5'},{id:'night',name:'Night',color:'#343e4a'}],
+  time: timeOptions,
   chairs: [{id:'peppermill',name:'Scandi oak concept',color:'#b7936c'},{id:'leather',name:'Leather chair concept · Maple leather',color:'#895330'},{id:'swyft-shadow',name:'Leather chair concept · Shadow fabric',color:'#555754'},{id:'nel',name:'Habitat Nel · oak',color:'#c8a574'},{id:'current',name:'Existing chairs',color:'#797a73'}],
   socket: [{id:'steel',name:'Brushed stainless',color:'#aeb3b5'},{id:'chrome',name:'Polished chrome',color:'#d3d9dc'},{id:'white',name:'Existing white',color:'#f1f0eb'}],
   clock: [{id:'current',name:'Existing black rim',color:'#252b29'},{id:'steel',name:'Brushed stainless rim',color:'#b8bdbf'}],
@@ -120,7 +133,7 @@ function windowFrame(w,h,x,y,z,rot=0){
   const transom=h*.025;box(w,.07,.11,0,transom,.067,white,g);sash(-w/2,w/2,-h/2,transom);box(.12,.018,.035,0,-h/2+.055,.15,white,g);
  }
  for(const xx of [-w/2-.058,w/2+.058])box(.047,h+.16,.22,xx,0,.005,paint,g);
- if(rot)box(w+.2,.035,.32,0,-h/2-.03,.085,white,g);else{box(w+.2,.035,.30,0,-h/2-.03,-.04,upstandMat,g).name='Sink window quartz sill';box(w+.2,.032,.02,0,-h/2-.063,.098,upstandMat,g).name='Closed sink sill riser';}
+ if(rot)box(w+.2,.035,.32,0,-h/2-.03,.085,white,g);else{box(w+.2,.035,.30,0,-h/2-.03,-.04,upstandMat,g).name='Sink window quartz sill';}
  rollerBlind(g,rot?'side-window':'sink-window',w+.12,h+.04,0,h/2+.055,.185);
 }
 windowFrame(1.42,1.23,.07,1.61,-1.84);windowFrame(.9,1.08,-1.18,1.55,-.83,Math.PI/2);
@@ -139,23 +152,26 @@ function front(w,h,x,y,z,parent,handle='bar',side=1){
  const door=new THREE.Group();door.position.set(x,y,z);parent.add(door);door.name='Cabinet front';
  box(w-.014,h-.018,.018,0,0,0,sageInset,door);
  for(const xx of [-w/2+.027,w/2-.027])box(.051,h-.003,.025,xx,0,.008,sage,door);
- for(const yy of [-h/2+.027,h/2-.027])box(w-.003,.051,.025,0,yy,.008,sage,door);
+ // Fit rails between stiles: overlapping front faces shimmer as the camera moves.
+ for(const yy of [-h/2+.027,h/2-.027])box(w-.105,.051,.025,0,yy,.008,sage,door);
  if(handle==='bar')pull(side*(w/2-.07),Math.min(h*.3,.25),.023,door);
  if(handle==='cup')cup(0,h/2-.055,.023,door);
  return door;
 }
 /** Add stationary stops behind closed reveals; retain the open cavity and door travel. */
 function cabinetStops(parent,w,h,d,mid=0,y=0,top=true){
- const frame=new THREE.Group();frame.name='Stationary cabinet face stops';parent.add(frame);const z=d/2+.0025;
- for(const side of [-1,1])box(.025,h,.025,mid+side*(w/2-.0125),y,z,sage,frame);
- box(w,.025,.025,mid,y-h/2+.0125,z,sage,frame);
- if(top)box(w,.025,.025,mid,y+h/2-.0125,z,sage,frame);
+ const frame=new THREE.Group();frame.name='Stationary cabinet face stops';parent.add(frame);const z=d/2+.005;
+ for(const side of [-1,1])box(.025,h,.01,mid+side*(w/2-.0125),y,z,sage,frame);
+ box(w-.05,.025,.01,mid,y-h/2+.0125,z,sage,frame);
+ if(top)box(w-.05,.025,.01,mid,y+h/2-.0125,z,sage,frame);
  return frame;
 }
+// Retained carcass brand and internal panel dimensions are unverified; 18 mm shell is a modelling assumption.
 function cabinetShell(parent,w,h,d,mid=0,top=true,lining=cabinetWood){
  cabinetStops(parent,w,h,d,mid);
  for(const side of [-1,1]){box(.018,h,d,mid+side*(w/2-.009),0,0,sage,parent);box(.003,h-.036,d-.025,mid+side*(w/2-.0195),0,.004,lining,parent);}
- box(w-.036,h,.018,mid,0,-d/2+.009,lining,parent);box(w,.018,d,mid,-h/2+.009,0,lining,parent);if(top){box(w,.018,d,mid,h/2-.009,0,sage,parent);box(w-.036,.003,d-.025,mid,h/2-.0195,.004,lining,parent);}
+ // Horizontal panels meet the sides; shared underside faces must never overlap.
+ box(w-.036,h-.036,.018,mid,0,-d/2+.009,lining,parent);box(w-.036,.018,d,mid,-h/2+.009,0,lining,parent).name='Cabinet bottom panel';if(top){box(w-.036,.018,d,mid,h/2-.009,0,sage,parent);box(w-.036,.003,d-.025,mid,h/2-.0195,.004,lining,parent);}
 }
 function drawerFront(parent,leaf,id,w,h,travel=.42){
  const carriage=new THREE.Group();carriage.position.copy(leaf.position);carriage.userData.cabinet=id;parent.add(carriage);leaf.position.set(0,0,0);carriage.add(leaf);
@@ -200,7 +216,7 @@ const sinkCabinet=cabinet(1.48,.76,.535,0,.49,-1.5625,0,2,true);sinkCabinet.name
 baseRun(-.92,.28,Math.PI/2,[{width:.6,appliance:'bin'},{width:.8,drawers:true},{width:.44,side:-1},{width:.6,appliance:'freezer'},{width:.6,appliance:'dishwasher'}],'Left base run');
 const hobBaseRun=baseRun(.92,-.195,-Math.PI/2,[{width:.54},{width:.6,drawers:true},{width:.97,side:-1}],'Hob base, two doors and three drawers');
 // Blind corner carcasses and scribed fillers close the U-shaped run against the walls.
-for(const x of [-.94,.94]){box(.6,.76,.6,x,.49,-1.54,sage).name='Closed blind corner cabinet';box(.6,.76,.035,x,.49,-1.847,sage).name='Cabinet rear wall filler';}
+for(const x of [-.94,.94]){box(.6,.76,x>0?.59:.6,x,.49,x>0?-1.545:-1.54,sage).name='Closed blind corner cabinet';box(.6,.76,.035,x,.49,-1.847,sage).name='Cabinet rear wall filler';}
 box(1.48,.76,.035,0,.49,-1.847,sage).name='Sink cabinet rear wall filler';
 for(const x of [-.6,.6])box(.035,.76,.06,x,.49,-1.215,sage).name='Scribed corner filler';
 const tallUnits=[];
@@ -220,8 +236,8 @@ for(const spec of [{name:'Oven and microwave',width:.6,type:'oven'},{name:'Larde
  for(const y of spec.type==='oven'?[.57,2.06]:spec.type==='fridge'?[.15]:[])box(spec.width,.025,.025,0,y,.3175,sage,g).name='Stationary appliance transition rail';
  {
   const lining=spec.type==='fridge'?white:cabinetWood;
-  for(const side of [-1,1]){box(.018,2.26,.63,side*(spec.width/2-.009),1.25,0,sage,g);box(.003,2.224,.605,side*(spec.width/2-.0195),1.25,.004,lining,g);}
-  for(const side of [-1,1]){box(spec.width,.018,.63,0,1.25+side*1.121,0,sage,g);box(spec.width-.036,.003,.605,0,1.25+side*1.1105,.004,lining,g);}
+  for(const side of [-1,1]){box(.018,2.26,.63,side*(spec.width/2-.009),1.25,0,sage,g).name='Tall cabinet side';box(.003,2.224,.605,side*(spec.width/2-.0195),1.25,.004,lining,g);}
+  for(const side of [-1,1]){box(spec.width-.036,.018,.63,0,1.25+side*1.121,0,sage,g).name='Tall cabinet horizontal panel';box(spec.width-.036,.003,.605,0,1.25+side*1.1105,.004,lining,g);}
   box(spec.width-.036,2.224,.018,0,1.25,-.305,lining,g);
   for(const y of spec.type==='fridge'?[.75,1.08,1.4,1.73,2.05,2.27]:[])box(spec.width-.04,.018,.56,0,y,0,lining,g);
   if(spec.type==='fridge')for(const y of [.34,.63]){box(.51,.022,.52,0,y-.12,0,white,g);box(.51,.20,.012,0,y,.255,glass,g);}
@@ -244,20 +260,23 @@ for(const spec of [{name:'Oven and microwave',width:.6,type:'oven'},{name:'Larde
  tallEdge+=spec.width;
 }
 // Continuous, recessed sage plinths, meeting at the rear corners and reaching the floor.
-box(1.68,.13,.06,0,.065,-1.22,sage).name='Rear continuous kickboard';
+// Side boards move outward by .16 m below; keep the rear board meeting their final inner edges.
+box(1.58,.13,.06,0,.065,-1.22,sage).name='Rear continuous kickboard';
 box(.06,.13,3.05,-.66,.065,.275,sage).name='Left continuous kickboard';
 box(.06,.13,3.73,.66,.065,.615,sage).name='Right continuous kickboard including tall units';
 box(.46,.13,.045,1,.065,2.455,sage).name='Tall unit plinth return';
 const quartzRoughness=texture((context,width,height)=>{const random=seeded(81);context.fillStyle='#cccccc';context.fillRect(0,0,width,height);for(let i=0;i<1600;i++){context.fillStyle=random()>.5?'#767676':'#eeeeee';context.fillRect(random()*width,random()*height,1,1);}},256,256);quartzRoughness.colorSpace=THREE.NoColorSpace;
 const work=new THREE.MeshPhysicalMaterial({color:'#ffffff',map:surfaces.stone,roughness:.27,roughnessMap:quartzRoughness,clearcoat:.28,clearcoatRoughness:.18,envMapIntensity:.65});
 box(.64,.045,3.12,-.91,.895,.29,work);box(.64,.045,2.14,.91,.895,-.22,work);
-box(.72,.045,.65,-.84,.895,-1.56,work);box(.72,.045,.65,.84,.895,-1.56,work);box(1.28,.045,.065,0,.895,-1.8525,work);box(1.28,.045,.045,0,.895,-1.2575,work);
+// Allow for the later 160 mm outward room adjustment: finished inner edges meet the 1 m sink.
+box(.875,.045,.65,-.7625,.895,-1.56,work).name='Left sink worktop surround';box(.875,.045,.65,.7625,.895,-1.56,work).name='Right sink worktop surround';box(1,.045,.085,0,.895,-1.8425,work);box(1.28,.045,.065,0,.895,-1.2675,work);
 const ceramic=new THREE.MeshPhysicalMaterial({color:'#f5f4ed',roughness:.19,clearcoat:.48,clearcoatRoughness:.15,side:THREE.DoubleSide});
 const sink=new THREE.Group();sink.name='Ceramic one-and-a-half bowl sink with right drainer';sink.position.set(0,.932,-1.55);room.add(sink);
 function roundPoints(w,d,r,x=0,z=0){const points=[];for(let corner=0;corner<4;corner++){const a=corner*Math.PI/2,cx=x+(corner===0||corner===3?1:-1)*(w/2-r),cz=z+(corner<2?1:-1)*(d/2-r);for(let i=0;i<9;i++){const angle=a+i*Math.PI/16;points.push(new THREE.Vector2(cx+Math.cos(angle)*r,cz+Math.sin(angle)*r));}}return points;}
 function flatShape(points){const shape=new THREE.Shape();points.forEach((p,i)=>i?shape.lineTo(p.x,-p.y):shape.moveTo(p.x,-p.y));shape.closePath();return shape;}
-const bowls=[{id:'main',name:'Large left bowl',x:-.315,z:0,w:.51,d:.425,depth:.19},{id:'small',name:'Small middle bowl',x:.09,z:.052,w:.235,d:.29,depth:.145}];
-const rimShape=flatShape(roundPoints(1.3,.57,.038));for(const bowl of bowls)rimShape.holes.push(new THREE.Path(flatShape(roundPoints(bowl.w,bowl.d,.045,bowl.x,bowl.z)).getPoints()));
+// CD150LJDM: 1000 × 500, 222 deep main bowl; aperture sizes and small depth are drawing estimates.
+const bowls=[{id:'main',name:'Large left bowl',x:-.287,z:0,w:.335,d:.410,depth:.222,wasteX:-.225,wasteZ:0},{id:'small',name:'Small middle bowl',x:-.020,z:0,w:.174,d:.260,depth:.145,wasteX:-.020,wasteZ:0}];
+const rimShape=flatShape(roundPoints(.994,.494,.028));for(const bowl of bowls)rimShape.holes.push(new THREE.Path(flatShape(roundPoints(bowl.w,bowl.d,.045,bowl.x,bowl.z)).getPoints()));
 const rimMesh=new THREE.Mesh(new THREE.ExtrudeGeometry(rimShape,{depth:.012,bevelEnabled:true,bevelSize:.003,bevelThickness:.003,bevelSegments:2}),ceramic);rimMesh.rotation.x=-Math.PI/2;rimMesh.position.y=-.012;rimMesh.castShadow=true;rimMesh.receiveShadow=true;sink.add(rimMesh);
 for(const bowl of bowls){
  const levels=[{y:0,inset:0},{y:-.02,inset:.005},{y:-bowl.depth+.022,inset:.027},{y:-bowl.depth,inset:.042}],vertices=[],indices=[];
@@ -265,38 +284,93 @@ for(const bowl of bowls){
  const n=36;for(let level=0;level<3;level++)for(let i=0;i<n;i++){const a=level*n+i,b=level*n+(i+1)%n,c=b+n,d=a+n;indices.push(a,b,d,b,c,d);}
  const geometry=new THREE.BufferGeometry();geometry.setAttribute('position',new THREE.Float32BufferAttribute(vertices,3));geometry.setIndex(indices);geometry.computeVertexNormals();const shell=new THREE.Mesh(geometry,ceramic);shell.name=bowl.name;shell.receiveShadow=true;sink.add(shell);
  const bottom=new THREE.Mesh(new THREE.ShapeGeometry(flatShape(roundPoints(bowl.w-.084,bowl.d-.084,.043,bowl.x,bowl.z))),ceramic);bottom.rotation.x=-Math.PI/2;bottom.position.y=-bowl.depth;bottom.receiveShadow=true;bottom.userData.action='plug:'+bowl.id;sink.add(bottom);
- cylinder(.031,.003,bowl.x,-bowl.depth+.002,bowl.z+.025,silver,sink);cylinder(.022,.004,bowl.x,-bowl.depth+.003,bowl.z+.025,dark,sink);cylinder(.014,.005,bowl.x,-bowl.depth+.004,bowl.z+.025,silver,sink);
 }
-const drainer=box(.345,.009,.44,.414,.002,0,ceramic,sink);drainer.name='Right-hand ribbed drainer';
-for(let i=0;i<7;i++){const rib=new THREE.Mesh(new THREE.CapsuleGeometry(.004,.282,4,8),ceramic);rib.rotation.z=Math.PI/2;rib.position.set(.416,.009,-.174+i*.058);rib.castShadow=true;sink.add(rib);}
-const overflow=new THREE.Mesh(new THREE.CircleGeometry(.012,20),silver);overflow.position.set(-.315,-.078,-.201);sink.add(overflow);
-const tapAssembly=new THREE.Group();tapAssembly.name='Chrome mixer tap with cylindrical base and side lever';tapAssembly.position.set(.12,.932,-1.705);room.add(tapAssembly);
+const drainer=box(.370,.009,.390,.260,.002,0,ceramic,sink);drainer.name='Right-hand ribbed drainer';
+for(let i=0;i<7;i++){const rib=new THREE.Mesh(new THREE.CapsuleGeometry(.004,.340,4,8),ceramic);rib.rotation.z=Math.PI/2;rib.position.set(.260,.009,-.174+i*.058);rib.castShadow=true;sink.add(rib);}
+const overflow=new THREE.Mesh(new THREE.CircleGeometry(.012,20),silver);overflow.rotation.y=Math.PI/2;overflow.position.set(-.440,-.078,0);sink.add(overflow);
+const tapAssembly=new THREE.Group();tapAssembly.name='Chrome mixer tap with cylindrical base and side lever';tapAssembly.position.set(-.029,.932,-1.723);room.add(tapAssembly);
 const tapChrome=new THREE.MeshPhysicalMaterial({color:'#e2e7e7',metalness:1,roughness:.11,envMapIntensity:1,envMap:metalEnvironment});
-cylinder(.027,.009,0,.0045,0,tapChrome,tapAssembly).name='Tap mounting collar';
+cylinder(.0255,.009,0,.0045,0,tapChrome,tapAssembly).name='Tap mounting collar';
 cylinder(.021,.118,0,.064,0,tapChrome,tapAssembly).name='Cylindrical mixer body';
 cylinder(.022,.008,0,.126,0,tapChrome,tapAssembly);
-const spout=new THREE.Group();spout.name='Swivelling spout';spout.scale.z=1.1;tapAssembly.add(spout);
-const tapCurve=new THREE.CatmullRomCurve3([new THREE.Vector3(0,.128,0),new THREE.Vector3(0,.265,0),new THREE.Vector3(0,.34,.055),new THREE.Vector3(0,.345,.135),new THREE.Vector3(0,.285,.212),new THREE.Vector3(0,.245,.217)]);const tap=new THREE.Mesh(new THREE.TubeGeometry(tapCurve,56,.012,16,false),tapChrome);tap.castShadow=true;spout.add(tap);
+const spout=new THREE.Group();spout.name='Swivelling spout';tapAssembly.add(spout);
+const tapCurve=new THREE.CatmullRomCurve3([new THREE.Vector3(0,.128,0),new THREE.Vector3(0,.2405,0),new THREE.Vector3(0,.320,.032),new THREE.Vector3(0,.348,.1075),new THREE.Vector3(0,.320,.183),new THREE.Vector3(0,.2405,.215),new THREE.Vector3(0,.222,.215)]);const tap=new THREE.Mesh(new THREE.TubeGeometry(tapCurve,56,.012,16,false),tapChrome);tap.castShadow=true;spout.add(tap);
 const mixer=cylinder(.019,.042,.031,.086,0,tapChrome,tapAssembly);mixer.rotation.z=Math.PI/2;mixer.name='Side mixer cartridge';
 const tapLever=new THREE.Group();tapLever.position.set(.053,.095,0);tapAssembly.add(tapLever);cylinder(.005,.072,0,.036,0,tapChrome,tapLever).name='Working side lever';
-cylinder(.0125,.016,0,.24,.217,tapChrome,spout).name='Tap aerator';
+cylinder(.0125,.016,0,.222,.215,tapChrome,spout).name='Tap aerator';
 tapAssembly.userData.action='swivel';tapLever.userData.action='tap';
 const leverTarget=cylinder(.018,.095,0,.036,0,new THREE.MeshBasicMaterial({transparent:true,opacity:0,depthWrite:false}),tapLever);leverTarget.userData.action='tap';
 const waterMat=new THREE.MeshPhysicalMaterial({color:'#c7edf4',transparent:true,opacity:.48,roughness:.12,metalness:0,clearcoat:1});
-const waterStream=cylinder(.0035,.38,0,.05,.217,waterMat,spout);waterStream.name='Running tap water';waterStream.visible=false;waterStream.userData.pickThrough=true;
+const waterStream=cylinder(.0035,.38,0,.05,.215,waterMat,spout);waterStream.name='Running tap water';waterStream.visible=false;waterStream.userData.pickThrough=true;
+// Moving highlights travel down the transparent jet, making flow visible without blue solid water.
+const streamHighlights=new THREE.Group();streamHighlights.name='Falling water highlights';streamHighlights.userData.pickThrough=true;spout.add(streamHighlights);
+const streamHighlightMaterial=new THREE.MeshBasicMaterial({color:'#eefbff',transparent:true,opacity:.48,depthWrite:false});
+for(let i=0;i<11;i++){const drop=new THREE.Mesh(new THREE.SphereGeometry(.0024,6,4),streamHighlightMaterial);drop.scale.set(1,2.6,1);drop.userData.pickThrough=true;streamHighlights.add(drop);}
 const sinkWater = createWaterState();
+const runoffTexture=texture((context,width,height)=>{
+ context.clearRect(0,0,width,height);
+ for(let i=0;i<9;i++){const y=i*height/9,gradient=context.createLinearGradient(0,y,0,y+height/12);gradient.addColorStop(0,'rgba(220,248,255,0)');gradient.addColorStop(.65,'rgba(235,252,255,.9)');gradient.addColorStop(1,'rgba(170,220,235,0)');context.fillStyle=gradient;context.fillRect(0,y,width,height/12);}
+},32,256);runoffTexture.wrapS=runoffTexture.wrapT=THREE.RepeatWrapping;
+const runoffMaterial=new THREE.MeshPhysicalMaterial({color:'#c4e7ec',map:runoffTexture,transparent:true,opacity:.64,roughness:.08,clearcoat:1,depthWrite:false,side:THREE.DoubleSide});
+/** Trace narrow rivulets down the cabinet face, then out over the plinth to the floor. */
+function createRunoff(x,name){
+ const group=new THREE.Group();group.name=name+' animated cabinet and plinth runoff';group.userData.pickThrough=true;room.add(group);
+ for(let i=0;i<5;i++){
+  const positions=[],uvs=[],indices=[],width=.009+(i%3)*.007;
+  for(let j=0;j<=24;j++){const t=j/24,y=.925-t*.92,z=y>.15?-1.222:-1.222+( .15-y)*.55,cx=x+(i-2)*.026+Math.sin(t*9+i*2)*.008;
+   positions.push(cx-width/2,y,z,cx+width/2,y,z);uvs.push(0,1-t*2+i*.19,1,1-t*2+i*.19);
+   if(j<24){const n=j*2;indices.push(n,n+1,n+2,n+1,n+3,n+2);}
+  }
+  const geometry=new THREE.BufferGeometry();geometry.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));geometry.setAttribute('uv',new THREE.Float32BufferAttribute(uvs,2));geometry.setIndex(indices);geometry.computeVertexNormals();const ribbon=new THREE.Mesh(geometry,runoffMaterial);ribbon.userData.pickThrough=true;group.add(ribbon);
+ }
+ return group;
+}
 const bowlVisuals={};
 for(const bowl of bowls){
  const surface=new THREE.Mesh(new THREE.ShapeGeometry(flatShape(roundPoints(bowl.w-.008,bowl.d-.008,.039))),waterMat);
  surface.rotation.x=-Math.PI/2;surface.position.set(bowl.x,-bowl.depth+.006,bowl.z);surface.visible=false;surface.userData.action='plug:'+bowl.id;sink.add(surface);
- const plug=cylinder(.028,.009,bowl.x,-bowl.depth+.009,bowl.z+.025,dark,sink);plug.name=bowl.name+' removable plug';plug.userData.action='plug:'+bowl.id;
- const ring=new THREE.Mesh(new THREE.TorusGeometry(.011,.0025,6,20),silver);ring.rotation.x=Math.PI/2;ring.position.y=.007;plug.add(ring);
+ const waste=cylinder(.045,.004,bowl.wasteX,-bowl.depth+.003,bowl.wasteZ,silver,sink);waste.name=bowl.name+' stainless waste flange';
+ const drain=cylinder(.035,.002,0,.0025,0,dark,waste);drain.name='Recessed waste opening';
+ const plug=cylinder(.031,.003,bowl.wasteX,-bowl.depth+.009,bowl.wasteZ,silver,sink);plug.name=bowl.name+' metal basket strainer plug';plug.userData.action='plug:'+bowl.id;
+ for(let index=0;index<12;index++){const angle=index*Math.PI/6;const slot=box(.003,.001,.012,Math.sin(angle)*.021,.002,Math.cos(angle)*.021,dark,plug);slot.rotation.y=angle;}
+ cylinder(.006,.009,0,.005,0,silver,plug);
  const target=cylinder(.045,.012,0,0,0,new THREE.MeshBasicMaterial({transparent:true,opacity:0,depthWrite:false}),plug);target.userData.action='plug:'+bowl.id;
  const trail=box(.16,.004,.27,bowl.x,.006,.19,waterMat,sink);trail.name=bowl.name+' overflow onto rim';trail.userData.pickThrough=true;
- const curtain=box(.12,.91,.006,bowl.x,.46,-1.235,waterMat,room);curtain.name=bowl.name+' water falling down front';curtain.userData.pickThrough=true;
- bowlVisuals[bowl.id]={surface,plug,target,trail,curtain};
+ const curtain=createRunoff(bowl.x,bowl.name);
+ bowlVisuals[bowl.id]={surface,plug,target,trail,curtain,waste};
 }
-const puddle=new THREE.Mesh(new THREE.CircleGeometry(1,64),waterMat);puddle.name='Water spilled onto floor';puddle.rotation.x=-Math.PI/2;puddle.position.set(-.10,.008,-.89);puddle.userData.pickThrough=true;room.add(puddle);
+const puddle=new THREE.Group();puddle.name='Water spilled onto floor';puddle.userData.pickThrough=true;scene.add(puddle);
+let floorFlood=null,floodMesh=null,lastFloodLitres=-1,floodFurnitureKey;
+/** Discard cached footprints while retaining the measured spill volume. */
+function invalidateFloorFlood(){
+ if(floodMesh){puddle.remove(floodMesh);floodMesh.geometry.dispose();floodMesh.userData.dispose();}
+ floorFlood=floodMesh=null;lastFloodLitres=-1;
+}
+/** Build the connected floor from final geometry, retaining hidden structural walls as barriers. */
+function buildFloorFlood(){
+ scene.updateMatrixWorld(true);const floors=[],obstacles=[];
+ scene.traverse(object=>{
+  if(!object.isMesh||object===waterStream||object.material===waterMat||object.material===runoffMaterial)return;
+  const bounds=new THREE.Box3().setFromObject(object),p=object.geometry.parameters;
+  const rect={minX:bounds.min.x,maxX:bounds.max.x,minZ:bounds.min.z,maxZ:bounds.max.z};
+  if(p?.height===.075&&bounds.min.y<0&&bounds.max.y<.001){floors.push(rect);return;}
+  // Tall solids reaching the floor include plinths, wall thresholds and furniture feet.
+  // View-hidden walls remain physical; inactive alternative furniture is excluded.
+  let active=true;for(let parent=object;parent;parent=parent.parent)if(!parent.visible&&!structuralWalls.includes(parent))active=false;
+  if(active&&bounds.min.y<=.035&&bounds.max.y>=.03)obstacles.push(rect);
+ });
+ floorFlood=createFloodMap(floors,obstacles,{x:-.1,z:-1.12});
+ floodMesh=createFloodVisual(THREE,floorFlood,waterMat);puddle.add(floodMesh);
+}
+/** Spread retained overflow across connected cells without draining it into the raised sink. */
+function syncFloorFlood(){
+ const litres=sinkWater.spilled;puddle.visible=litres>0;waterReset.hidden=!puddle.visible;
+ if(litres===lastFloodLitres)return;lastFloodLitres=litres;
+ if(!litres){if(floodMesh){puddle.remove(floodMesh);floodMesh.geometry.dispose();floodMesh.userData.dispose();}floorFlood=floodMesh=null;return;}
+ if(!floorFlood)buildFloorFlood();
+ const coverage=floodCoverage(floorFlood,litres);floodMesh.userData.update(coverage.count);
+ floodMesh.position.y=.004+coverage.depth;puddle.userData.coverage={...coverage,area:floorFlood.area,reachableCells:floorFlood.cells.length};
+}
 const waterPanel=document.querySelector('#water-panel'),waterStatus=document.querySelector('#water-status'),waterReset=document.querySelector('#water-reset');
 /** Synchronise independent bowl surfaces, the swivelling spout and accessible controls. */
 function syncWater(){
@@ -304,15 +378,22 @@ function syncWater(){
   const water=sinkWater.bowls[bowl.id],visual=bowlVisuals[bowl.id],fraction=water.litres/waterDefaults.capacities[bowl.id];
   visual.surface.visible=water.litres>.0001;visual.surface.position.y=-bowl.depth+.006+fraction*(bowl.depth-.008);
   visual.surface.scale.set((bowl.w-.084+fraction*.076)/(bowl.w-.008),(bowl.d-.084+fraction*.076)/(bowl.d-.008),1);
-  visual.plug.position.set(water.plugged?bowl.x:(bowl.id==='main'?.50:.34),water.plugged?-bowl.depth+.009:.025,water.plugged?bowl.z+.025:.10);
+  // The photo shows a slotted basket; its captive actuation is unverified, so do not invent lift travel.
+  visual.plug.position.set(bowl.wasteX,-bowl.depth+.009,bowl.wasteZ);
   visual.trail.visible=visual.curtain.visible=water.spilling;
-  const button=document.querySelector('#water-plug-'+bowl.id);button.textContent=(water.plugged?'Pull out ':'Put in ')+(bowl.id==='main'?'main':'small')+' plug';button.setAttribute('aria-pressed',String(water.plugged));
+  const button=document.querySelector('#water-plug-'+bowl.id);button.textContent=(water.plugged?'Open ':'Close ')+(bowl.id==='main'?'main':'small')+' plug';button.setAttribute('aria-pressed',String(water.plugged));
  }
- spout.rotation.y=sinkWater.target==='main'?-Math.PI/2:0;
+ spout.rotation.y=sinkWater.target==='main'?-Math.PI/3:0;
  const target=bowls.find(bowl=>bowl.id===sinkWater.target),surface=bowlVisuals[target.id].surface;
  waterStream.visible=sinkWater.tapOn;
- const bottom=surface.visible?surface.position.y:-target.depth+.006,length=.24-bottom;waterStream.scale.y=length/.38;waterStream.position.y=(.24+bottom)/2;
- puddle.visible=sinkWater.spilled>0;const spread=Math.min(1,Math.sqrt(sinkWater.spilled/8));puddle.scale.set(.15+spread*.52,.18+spread*.55,1);waterReset.hidden=!puddle.visible;
+ // Transform the actual bowl contact height into the spout frame; a trace of water cannot shorten the jet above its contact.
+ sink.updateWorldMatrix(true,false);spout.updateWorldMatrix(true,false);
+ const contact=sink.localToWorld(new THREE.Vector3(target.x,Math.max(-target.depth+.002,surface.visible?surface.position.y:-target.depth+.002),target.z));
+ const bottom=spout.worldToLocal(contact).y,length=.214-bottom;waterStream.scale.y=length/.38;waterStream.position.y=(.214+bottom)/2;
+ streamHighlights.visible=sinkWater.tapOn;
+ const phase=performance.now()*.001;
+ streamHighlights.children.forEach((drop,i)=>{const progress=(phase*2.2+i/streamHighlights.children.length)%1;drop.position.set(Math.sin(i*2.4+phase*11)*.001,.214-progress*length,.215+Math.cos(i*1.7+phase*9)*.001);});
+ syncFloorFlood();
  const tapButton=document.querySelector('#water-tap');tapButton.textContent=sinkWater.tapOn?'Turn flow off':'Turn flow on';tapButton.setAttribute('aria-pressed',String(sinkWater.tapOn));
  const swivelButton=document.querySelector('#water-swivel');swivelButton.textContent='Aim at '+(sinkWater.target==='small'?'main':'small')+' bowl';
  const status=sinkWater.spilling?'Overflowing — water on the floor':sinkWater.spilled>0?'Spilled water remains on the floor':'Tap aimed at '+sinkWater.target+' bowl';
@@ -327,22 +408,26 @@ function togglePlug(id){sinkWater.bowls[id].plugged=!sinkWater.bowls[id].plugged
 document.querySelector('#water-tap').onclick=toggleTap;document.querySelector('#water-swivel').onclick=swivelTap;
 for(const id of ['main','small'])document.querySelector('#water-plug-'+id).onclick=()=>togglePlug(id);
 waterReset.onclick=()=>{resetWater(sinkWater);syncWater();};
-/** Reveal water controls only after a direct sink interaction. */
-function revealWater(){waterPanel.hidden=false;}
+/** Keep direct scene interaction unobstructed; keyboard inspection exposes compact controls. */
+function revealWater(keyboard=false){waterPanel.hidden=!keyboard;}
 document.querySelector('#water-close').onclick=()=>{waterPanel.hidden=true;canvas.focus({preventScroll:true});};
 waterPanel.addEventListener('keydown',e=>{if(e.key==='Escape')document.querySelector('#water-close').click();});
 let waterTime=performance.now();
 /** Advance only active, visible-frame time; tab suspension cannot cause a surprise flood. */
-function animateSinkWater(){const now=performance.now(),seconds=Math.min(.1,Math.max(0,(now-waterTime)/1000));waterTime=now;stepWater(sinkWater,seconds);syncWater();}
+function animateSinkWater(){const now=performance.now(),seconds=Math.min(.1,Math.max(0,(now-waterTime)/1000));waterTime=now;stepWater(sinkWater,seconds);runoffTexture.offset.y=now*.00072;syncWater();}
 syncWater();
 cabinet(1.8,.77,.34,-1.04,1.83,.53,Math.PI/2,2).name="Left wall cupboard, two doors";cabinet(.87,.77,.34,1.04,1.83,-1.425,-Math.PI/2,[.64,.36]).name="Wall cupboard beside extractor, two doors";cabinet(.45,.77,.34,1.04,1.83,.53,-Math.PI/2,1).name="Wall cupboard beside tower, one door";
 box(.34,.77,.11,1.04,1.83,.81,sage).name='Wall cupboard to tall-unit filler';
 const cornice=new THREE.Group();cornice.name='Profiled cornice and concealed duct enclosure';room.add(cornice);
 function crown(x,z,length,depth=.34){
  const g=new THREE.Group();g.name='Continuous four-sided hollow cornice';g.position.set(x+Math.sign(x)*.16,0,z);cornice.add(g);
- const bottom=depth>.5?2.383:2.224,inside=sage.clone();inside.color.multiplyScalar(.78);
- box(depth-.038,.016,length-.038,0,bottom,0,inside,g).name='Recessed cornice cavity floor';
- const levels=[{y:2.215,o:0},{y:2.345,o:0},{y:2.365,o:.002},{y:2.413,o:.031},{y:2.417,o:.04},{y:dimensions.corniceTop,o:.04}];
+ const bottom=depth>.5?2.388:2.224,inside=sage.clone();inside.color.multiplyScalar(.78);
+ if(x===1.04){
+  // Leave a real opening for the chimney instead of driving it through the shelf.
+  box(.055,.016,length-.038,-.1235,bottom,0,inside,g).name='Recessed cornice cavity floor';
+  for(const [z0,z1] of [[-length/2+.019,.08-.155/(dimensions.kitchenLength/3.85)],[.08+.155/(dimensions.kitchenLength/3.85),length/2-.019]])box(.247,.016,z1-z0,.0275,bottom,(z0+z1)/2,inside,g).name='Recessed cornice cavity floor';
+ }else box(depth-.038,.016,length-.038,0,bottom,0,inside,g).name='Recessed cornice cavity floor';
+ const levels=[...(depth>.5?[{y:2.38,o:0},{y:2.4,o:.002}]:[{y:2.215,o:0},{y:2.345,o:0},{y:2.365,o:.002}]),{y:2.413,o:.031},{y:2.417,o:.04},{y:dimensions.corniceTop,o:.04}];
  const vertices=[],indices=[];
  for(const {y,o} of levels)for(const inset of [0,.018])for(const [xx,zz] of [[-1,-1],[1,-1],[1,1],[-1,1]])vertices.push(xx*(depth/2+o-inset),y,zz*(length/2+o-inset));
  for(let i=0;i<levels.length-1;i++)for(let j=0;j<4;j++){
@@ -417,8 +502,22 @@ for(let i=0;i<5;i++){const z=-.65+i*.12;cylinder(.022,.006,.662,.936,z,dark,hob)
 function toggleBurner(index){if(!Number.isInteger(index)||!burnerFlames[index])return;const flames=burnerFlames[index];flames.visible=!flames.visible;burnerKnobs[index].rotation.y=flames.visible?-Math.PI/2:0;}
 function animateWaterAndFlames(){const t=performance.now()*.006;tapLever.rotation.z=THREE.MathUtils.lerp(tapLever.rotation.z,waterStream.visible?-.5:0,.15);waterStream.scale.x=waterStream.scale.z=1+.08*Math.sin(t*2);burnerFlames.forEach((flames,i)=>{if(flames.visible)flames.scale.y=.94+.08*Math.sin(t+i*2);});}
 hob.position.x=.16;
-const hood=box(.49,.045,.82,.99,1.64,-.42,silver);hood.name='Existing AEG extractor';const hoodChimney=box(.22,.9375,.34,1.12,2.13125,-.42,silver);hoodChimney.name='Extractor chimney connected to canopy';box(.006,.024,.26,.741,1.641,-.42,dark);
-box(.18,.025,.82,1.01,2.23,-.42,sage);
+// AEG DKB5960HM manufacturer drawing PSGBCH160D363033; installed PNC unverified.
+const hoodSteel=createBrushedStainless({THREE,environment:createRoomReflectionEnvironment({THREE,texture})});
+hoodSteel.name='Extractor brushed stainless steel';
+const hood=new THREE.Group();hood.name='Existing AEG extractor';hood.position.set(.16,.04,0);room.add(hood);
+hood.userData.specification={model:'DKB5960HM',width:.898,depth:.5,canopyHeight:.14,chimneyWidth:.31,chimneyDepth:.29,certainty:'Requested model; photo consistent; installed PNC unverified'};
+// A 40 mm fascia surrounds the underside; the canopy rises another 100 mm to the chimney.
+for(const x of [.743,1.227])box(.016,.034,.898,x,1.6405,-.42,hoodSteel,hood).name='Extractor edge rail';
+for(const z of [-.861,.021])box(.468,.034,.016,.985,1.6405,z,hoodSteel,hood).name='Extractor side rail';
+box(.5,.006,.898,.985,1.6205,-.42,hoodSteel,hood).name='Extractor underside';
+const canopyVertices=[.735,1.6575,-.869,1.235,1.6575,-.869,1.235,1.6575,.029,.735,1.6575,.029,.945,1.7575,-.575,1.235,1.7575,-.575,1.235,1.7575,-.265,.945,1.7575,-.265];
+const canopyGeometry=new THREE.BufferGeometry();canopyGeometry.setAttribute('position',new THREE.Float32BufferAttribute(canopyVertices,3));canopyGeometry.setIndex([0,4,1,1,4,5,1,5,2,2,5,6,2,6,3,3,6,7,3,7,0,0,7,4]);canopyGeometry.computeVertexNormals();
+const canopyMaterial=cloneBrushedStainless(hoodSteel);canopyMaterial.side=THREE.DoubleSide;const canopy=new THREE.Mesh(canopyGeometry,canopyMaterial);canopy.name='Extractor sloping canopy';canopy.castShadow=true;canopy.receiveShadow=true;hood.add(canopy);
+// Two stainless design filters; frame sizes are inferred from the undimensioned plan view.
+for(const z of [-.572,-.268])box(.34,.002,.30,1.015,1.6165,z,material('#777b77',.95),hood).name='Extractor grease filter';
+const hoodChimney=box(.29,.8025,.31,1.09,2.19875,-.42,hoodSteel);hoodChimney.name='Extractor chimney connected to canopy';
+box(.006,.024,.26,.732,1.641,-.42,dark,hood).name='Extractor controls';
 
 const shelves=new THREE.Group();shelves.userData.choice='lighting';room.add(shelves);for(const y of [1.42,1.88]){box(.19,.035,.42,-1.08,y,-1.58,oak,shelves);}
 const shelfLights=[];const shelfEmitters=[];
@@ -434,7 +533,7 @@ function taskLight(x,y,z,w,d,kind,power){
  const light=new THREE.SpotLight('#ffe9cc',power,4,Math.PI*.36,.8,2);light.position.set(x,y-.016,z);light.target.position.set(x,.85,z);lamp.add(light,light.target);
  taskLights.push({light,lens,kind,power});return face;
 }
-for(const z of [-.68,-.16])taskLight(1.06,1.614,z,.055,.07,'hoodLight',.17);
+for(const z of [-.62,-.22])taskLight(.94,1.6555,z,.04,.04,'hoodLight',.17).name='Extractor lamp lens';
 for(const [x,z,length] of [[-1.20,.04,.58],[-1.20,.97,.58],[1.20,-1.425,.73],[1.20,.53,.31]])taskLight(x,1.437,z,.017,length,'cabinetLight',.12);
 const ceilingFixtures=new THREE.Group();ceilingFixtures.name='Three recessed offshot spotlights';room.add(ceilingFixtures);
 for(const z of [-1.05,.15,1.35]){
@@ -479,7 +578,7 @@ function makeTiles(){
  clearGroup(tileGroups);clearGroup(upstands);
  const h=state.upstand==='none'?0:.095,base=.92+h,rows=tileCourses(),top=rows*.103;
  upstandMat.color.set('#ffffff');
- if(h){box(.02,h,3.7,-1.35,.92+h/2,0,upstandMat,upstands).name='Left upstand to rear corner';box(.02,h,2.70,1.35,.92+h/2,-.50,upstandMat,upstands).name='Right upstand to rear corner';const rear=new THREE.Group();rear.name='Rear upstand returning into sink sill';upstands.add(rear);box(.62,h,.02,-1.03,.92+h/2,-1.85,upstandMat,rear).name='Left window upstand return';box(.48,h,.02,1.10,.92+h/2,-1.85,upstandMat,rear).name='Right window upstand return';box(1.62,.032,.018,.07,.932,-1.835,upstandMat,rear).name='Low upstand below sill';}
+ if(h){box(.02,h,3.7,-1.35,.92+h/2,0,upstandMat,upstands).name='Left upstand to rear corner';box(.02,h,2.70,1.35,.92+h/2,-.50,upstandMat,upstands).name='Right upstand to rear corner';const rear=new THREE.Group();rear.name='Rear upstand returning into sink sill';upstands.add(rear);box(.62,h,.02,-1.03,.92+h/2,-1.85,upstandMat,rear).name='Left window upstand return';box(.48,h,.02,1.10,.92+h/2,-1.85,upstandMat,rear).name='Right window upstand return';box(1.62,.030,.020,.07,.9325,-1.84,upstandMat,rear).name='Continuous upstand flush beneath sink sill';}
  for(const [length,x,z,r] of [[2.21,-1.34,.745,Math.PI/2],[.55,-1.34,-1.575,Math.PI/2],[.71,-.995,-1.835,0],[.57,1.065,-1.835,0],[2.685,1.34,-.4925,-Math.PI/2]])tileRun(length,x,z,r,base,rows);
  if(rows)tileRun(.82,1.32,-.42,-Math.PI/2,base+top,Math.max(1,Math.round((1.6-base-top)/.103)));
 }
@@ -510,6 +609,12 @@ for(const wall of room.children){
 room.name='Kitchen';
 room.scale.z=dimensions.kitchenLength/3.85;
 room.scale.x=(dimensions.aisleWidth+1.28)/2.78;
+// Keep measured products rigid when the estimated room shell is resized.
+for(const product of [sink,tapAssembly])product.scale.set(1/room.scale.x,1,1/room.scale.z);
+tapAssembly.position.x=sink.position.x-.029/room.scale.x;tapAssembly.position.z=sink.position.z-.173/room.scale.z;
+// Preserve the hood's measured width around its hob centre after room-length scaling.
+hood.scale.z=1/room.scale.z;hood.position.z=-.42*(1-1/room.scale.z);hoodChimney.scale.z=1/room.scale.z;
+for(const lamp of fixtures.children)if(lamp.userData.choice==='hoodLight'){lamp.scale.z=1/room.scale.z;lamp.position.z=-.42*(1-1/room.scale.z);}
 for(const light of shelfLights){light.position.x-=.16;light.position.z*=room.scale.z;light.target.position.x-=.16;light.target.position.z*=room.scale.z;}
 const dining=addDining({scene,box,cylinder,material,paint,white,silver,dark,oak,wood,surfaces,glass,rollerBlind});
 const brickMap=texture((c,w,h)=>{
@@ -567,6 +672,8 @@ function update(){
  for(const face of exteriorFaces)face.material=state.exterior==='plain'?plainExterior:brickMat;
  state.clockMinutes=Math.max(0,Math.min(1439,Number(state.clockMinutes)||0));hourHand.rotation.z=-state.clockMinutes/720*Math.PI*2;minuteHand.rotation.z=-(state.clockMinutes%60)/60*Math.PI*2;rim.material=state.clock==='steel'?silver:dark;
  dining.setTable(state.table||'current',state.tableExtended);dining.setShoeRack(state.shoeRack);dining.setChairs(state.chairs);dining.setRadiator(state.radiator);dining.setArt(state.art);
+ const furnitureKey=JSON.stringify([state.table,state.tableExtended,state.shoeRack,state.chairs,state.radiator]);
+ if(furnitureKey!==floodFurnitureKey){floodFurnitureKey=furnitureKey;invalidateFloorFlood();syncFloorFlood();}
  if(state.upstand==='stone')state.upstand='white';
  const finish={steel:{color:'#b8bdbf',roughness:.64,metalness:.65,envMapIntensity:.4},chrome:{color:'#d9dfe1',roughness:.14,metalness:1,envMapIntensity:.85},white:{color:'#f2f1ed',roughness:.4,metalness:0,envMapIntensity:.2}}[state.socket]||{color:'#b8bdbf',roughness:.64,metalness:.65,envMapIntensity:.4};
  socketMat.color.set(finish.color);socketMat.roughness=finish.roughness;socketMat.metalness=finish.metalness;socketMat.envMapIntensity=finish.envMapIntensity;socketMat.roughnessMap=state.socket==='steel'?silver.roughnessMap:null;socketMat.bumpMap=state.socket==='steel'?silver.bumpMap:null;socketMat.needsUpdate=true;
@@ -575,10 +682,11 @@ function update(){
  const barY=.92+(state.upstand==='none'?0:.095)+Math.max(.17,tileCourses()*.103-.055);knifeBar.position.y=barY;knifeParts.forEach(p=>p.position.y=barY);
  state.rugWidth=Math.max(.5,Math.min(.7,Math.round(state.rugWidth*10)/10));state.rugLength=Math.max(1.2,Math.min(2,Math.round(state.rugLength*5)/5));
  rug.visible=state.rug!=='none';if(rug.visible){rug.material.map=rugTexture(state.rug);rug.material.needsUpdate=true;rug.scale.set(state.rugWidth,state.rugLength,1);}
- if(state.time==='day')state.time='noon';
- const night=state.time==='night',morning=state.time==='morning',azimuth=morning?115:180,elevation=morning?20:36.6,relative=(azimuth-105)*Math.PI/180,altitude=elevation*Math.PI/180;
- sun.position.set(Math.sin(relative)*Math.cos(altitude)*10,Math.sin(altitude)*10+1,-Math.cos(relative)*Math.cos(altitude)*10+1.4);sun.target.position.set(0,1,1.4);
- ambient.intensity=night?.27:morning?.75:1.05;ambient.color.set(morning?'#f4dfc5':'#e9f1ff');sun.intensity=night?0:morning?2.4:2.9;sun.color.set(morning?'#ffe0b1':'#fff7e8');fill.intensity=night?.12:morning?.28:.42;scene.background.set(night?'#202b38':morning?'#e8dccb':'#e3e8eb');scene.environmentIntensity=night?.2:morning?.45:.6;renderer.toneMappingExposure=night?1.04:1.08;taskLights.forEach(({light,lens,kind,power})=>{light.intensity=state[kind]?power*(night?1:.55):0;lens.emissiveIntensity=state[kind]?(night?1:.4):0;});dining.setTime(night);
+ const lighting=lightingForTime(state.time,roomLighting);
+ state.time=lighting.phase;
+ const night=lighting.night;
+ applyLighting(lighting,{sun,ambient,fill,scene,renderer,reflectionMaterials:[hoodSteel,canopyMaterial]});
+ taskLights.forEach(({light,lens,kind,power})=>{light.intensity=state[kind]?power*(night?1:.55):0;lens.emissiveIntensity=state[kind]?(night?1:.4):0;});dining.setTime(night);
 
  shelfEmitters.forEach(m=>{m.visible=state.lighting;m.material.emissiveIntensity=night?.6:.2;});
  shelfLights.forEach(l=>{l.visible=state.lighting;l.intensity=night?.13:.075;});
@@ -616,7 +724,7 @@ const editorChoices=document.querySelector('#item-choices');
 const choiceLabels={wallView:'Wall visibility',exterior:'Exterior finish',table:'Dining table',tiles:'Metro tiles',grout:'Grout colour',upstand:'Upstand',paint:'Paint colour',chairs:'Dining chairs',socket:'Socket finish',radiator:'Radiator',art:'Wall prints',rug:'Runner',rugSize:'Runner size',clock:'Clock',shoeRack:'Shoe rack',lighting:'Shelf lighting',cabinetLight:'Under-cupboard lighting',hoodLight:'Extractor lights',ceilingLight:'Offshot spotlights',time:'Morning, noon or night'};
 const lightKinds=new Set(['lighting','cabinetLight','hoodLight','ceilingLight']);
 const lightOptions=[{id:'on',name:'Lights on',color:'#eddfbd'},{id:'off',name:'Lights off',color:'#939b91'}];
-function choose(kind,id){if(kind==='tableExtended'&&state.table==='current')id='off';if(kind==='table'&&id==='current')state.tableExtended=false;if(kind==='upstand')state.tiles=id==='none'?'two':'zero';if(kind==='time')state.clockMinutes={morning:540,noon:720,night:1260}[id]??720;if(kind==='rugSize'){const size=options.rugSize.find(s=>s.id===id);if(size){state.rugWidth=size.width;state.rugLength=size.length;}}state[kind]=lightKinds.has(kind)||kind==='tableExtended'?id==='on':id;update();}
+function choose(kind,id){if(kind==='tableExtended'&&state.table==='current')id='off';if(kind==='table'&&id==='current')state.tableExtended=false;if(kind==='upstand')state.tiles=id==='none'?'two':'zero';if(kind==='time')state.clockMinutes=clockMinutesForTime(id);if(kind==='rugSize'){const size=options.rugSize.find(s=>s.id===id);if(size){state.rugWidth=size.width;state.rugLength=size.length;}}state[kind]=lightKinds.has(kind)||kind==='tableExtended'?id==='on':id;update();}
 function refreshEditor(){
  const fixed=state.table==='current',extension=document.querySelector('#table-extended');if(extension){extension.checked=!!state.tableExtended;extension.disabled=fixed;}const extensionRow=document.querySelector('#table-extension-row');if(extensionRow)extensionRow.hidden=fixed;const tableName=document.querySelector('#table-selection');if(tableName)tableName.textContent=options.table.find(t=>t.id===state.table)?.name||'Current table';const tableSize=document.querySelector('#table-size');if(tableSize)tableSize.textContent=fixed?'180 × 88 cm · fixed size':(state.tableExtended?'240':'180')+' × 90 cm';const tableStatus=document.querySelector('#table-status');if(tableStatus)tableStatus.textContent=fixed?'The fixed table does not extend.':'Oak table concept · 180–240 cm';
  const clockTime=document.querySelector('#clock-time');if(clockTime)clockTime.value=String(Math.floor(state.clockMinutes/60)).padStart(2,'0')+':'+String(state.clockMinutes%60).padStart(2,'0');
@@ -690,13 +798,13 @@ let noticeTimer;function notify(s){const n=document.querySelector('#notice');n.t
 document.querySelector('#wall-view').onclick=()=>openEditor('wallView');
 const views={
  countertop:countertopView,
- entry:{position:[0,1.66,1.15],target:[0,1.18,-1.48]},
- sink:{position:[.15,1.64,.55],target:[-.45,1.4,-1.62],fov:64},
- hob:{position:[-.12,1.62,-.40],target:[1.04,.96,-.383],fov:55},
- cooking:{position:[-.85,1.68,3.3],target:[1.03,1.35,1.0],fov:64},
- back:{position:[0,1.64,-.9],target:[-.25,1.2,4.8]},
- dining:{position:[-.9,1.7,1.95],target:[-.4,1,4.8]},
- whole:{position:[.25,1.8,4.55],target:[-.15,1.25,-1.55],fov:67},
+ entry:{position:[0,1.65,1.15],target:[0,1.18,-1.48]},
+ sink:{position:[.15,1.65,.55],target:[-.45,1.4,-1.62],fov:64},
+ hob:{position:[-.12,1.65,-.40],target:[1.04,.96,-.383],fov:55},
+ cooking:{position:[-.85,1.65,3.3],target:[1.03,1.35,1.0],fov:64},
+ back:{position:[0,1.65,-.9],target:[-.25,1.2,4.8]},
+ dining:{position:[-.9,1.65,1.95],target:[-.4,1,4.8]},
+ whole:{position:[.25,1.65,4.55],target:[-.15,1.25,-1.55],fov:67},
  top:{position:[-.4,9,1.77],target:[-.4,0,1.75]}
 };
 function view(name){closeEditor();const v=views[name];camera.fov=v.fov||58;camera.updateProjectionMatrix();camera.position.set(...v.position);controls.target.set(...v.target);controls.update();document.querySelectorAll('[data-view]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.view===name));}
@@ -704,12 +812,13 @@ document.querySelectorAll('[data-view]').forEach(b=>b.onclick=()=>view(b.dataset
 function move(direction){const f=new THREE.Vector3();camera.getWorldDirection(f);f.y=0;if(f.length()<.1)f.set(0,0,-1);f.normalize();const side=new THREE.Vector3().crossVectors(f,new THREE.Vector3(0,1,0));const delta=(direction==='left'||direction==='right'?side:f).multiplyScalar(direction==='left'||direction==='back'?-.14:.14);const next=camera.position.clone().add(delta);next.z=THREE.MathUtils.clamp(next.z,-1.5,5.05);next.x=THREE.MathUtils.clamp(next.x,next.z<1.8?-1.15:-2.08,1.21);delta.copy(next).sub(camera.position);camera.position.add(delta);controls.target.add(delta);controls.update();}
 document.querySelectorAll('[data-move]').forEach(b=>{let timer;b.onpointerdown=e=>{e.preventDefault();move(b.dataset.move);timer=setInterval(()=>move(b.dataset.move),100);b.setPointerCapture(e.pointerId);};b.onpointerup=b.onpointercancel=b.onlostpointercapture=()=>clearInterval(timer);});
 /** Turn the viewing direction in place, preserving camera position and pitch. */
-function turn(direction){const offset=controls.target.clone().sub(camera.position);offset.applyAxisAngle(new THREE.Vector3(0,1,0),direction==='left'?Math.PI/2:-Math.PI/2);controls.target.copy(camera.position).add(offset);controls.update();document.querySelectorAll('[data-view]').forEach(b=>b.setAttribute('aria-pressed','false'));}
+function turn(angle){const offset=controls.target.clone().sub(camera.position);offset.applyAxisAngle(new THREE.Vector3(0,1,0),angle);controls.target.copy(camera.position).add(offset);controls.update();document.querySelectorAll('[data-view]').forEach(b=>b.setAttribute('aria-pressed','false'));}
 const presetKeys=['entry','sink','countertop','hob','cooking','back','whole','top'];
 const movementKeys={ArrowUp:'forward',w:'forward',ArrowDown:'back',s:'back',ArrowLeft:'left',a:'left',ArrowRight:'right',d:'right'};
-document.querySelectorAll('[data-turn]').forEach(b=>b.onclick=()=>turn(b.dataset.turn));
-document.querySelector('#reset-view').onclick=()=>view('entry');
-canvas.addEventListener('keydown',e=>{if(e.altKey||e.ctrlKey||e.metaKey)return;const key=e.key.length===1?e.key.toLowerCase():e.key;const dir=movementKeys[key];if(dir){e.preventDefault();move(dir);}else if(key==='q'||key==='e'){e.preventDefault();turn(key==='q'?'left':'right');}else if(key==='r'){e.preventDefault();view('entry');}else if(key==='i'){e.preventDefault();view('sink');revealWater();document.querySelector('#water-tap').focus();}else if(presetKeys[Number(key)-1]){e.preventDefault();view(presetKeys[Number(key)-1]);}});
+const reducedTurnMotion=matchMedia('(prefers-reduced-motion: reduce)');
+const turning=createTurnMotion(turn,()=>reducedTurnMotion.matches);
+bindTurnControls(canvas,document.querySelectorAll('[data-turn]'),turning);
+canvas.addEventListener('keydown',e=>{if(e.altKey||e.ctrlKey||e.metaKey)return;const key=e.key.length===1?e.key.toLowerCase():e.key;const dir=movementKeys[key];if(dir){e.preventDefault();move(dir);}else if(key==='r'){e.preventDefault();view('entry');}else if(key==='i'){e.preventDefault();view('sink');revealWater(true);document.querySelector('#water-tap').focus();}else if(presetKeys[Number(key)-1]){e.preventDefault();view(presetKeys[Number(key)-1]);}});
 const shortcutTip=document.querySelector('#shortcut-tip');
 /** Show shortcuts on hover and keyboard focus without intercepting scene input. */
 function shortcut(button,label){button.title=label+' (scene focused)';button.setAttribute('aria-description',button.title);button.addEventListener('pointerenter',show);button.addEventListener('focus',show);button.addEventListener('pointerleave',hide);button.addEventListener('blur',hide);
@@ -720,8 +829,7 @@ function shortcut(button,label){button.title=label+' (scene focused)';button.set
 }
 for(const b of document.querySelectorAll('[data-view]'))shortcut(b,b.textContent+' · '+(presetKeys.indexOf(b.dataset.view)+1));
 for(const b of document.querySelectorAll('[data-move]')){shortcut(b,b.getAttribute('aria-label')+' · '+({forward:'↑ / W',back:'↓ / S',left:'← / A',right:'→ / D'}[b.dataset.move]));b.addEventListener('click',e=>{if(e.detail===0)move(b.dataset.move);});}
-for(const b of document.querySelectorAll('[data-turn]'))shortcut(b,b.getAttribute('aria-label')+' 90° · '+(b.dataset.turn==='left'?'Q':'E'));
-shortcut(document.querySelector('#reset-view'),'Reset view · R');
+for(const b of document.querySelectorAll('[data-turn]'))shortcut(b,b.getAttribute('aria-label')+' · Hold '+(b.dataset.turn==='left'?'Q':'E'));
 
 new ResizeObserver(()=>{const r=canvas.parentElement.getBoundingClientRect();renderer.setSize(r.width,r.height,false);camera.aspect=r.width/r.height;camera.updateProjectionMatrix();}).observe(canvas.parentElement);
 const structuralWalls=[rearWall,rightWall,...room.children.filter(o=>o.isMesh&&o.material===paint&&o.geometry.parameters.width===dimensions.wallThickness),...dining.wallGroups];
@@ -734,14 +842,14 @@ function updateWallVisibility(elevated=camera.position.y>3.3){
  }
 }
 update();view('entry');renderer.setAnimationLoop(()=>{
- controls.update();dining.animateDoors();dining.animateDresser();animateBlinds();animateCabinets();animateSinkWater();animateWaterAndFlames();const elevated=camera.position.y>3.3;
+ turning.tick();controls.update();dining.animateDoors();dining.animateDresser();animateBlinds();animateCabinets();animateSinkWater();animateWaterAndFlames();const elevated=camera.position.y>3.3;
  kitchenCeiling.visible=camera.position.y<2.6;diningCeiling.visible=camera.position.y<2.6;
  updateWallVisibility(elevated);
  dining.lampshade.visible=!elevated;ceilingFixtures.traverse(o=>{if(o.isMesh)o.visible=!elevated;});renderer.render(scene,camera);
 });
 
 // Inspection surface for acceptance checks and later room work.
-window.kitchenModel={animateCabinets,hoodChimney,microwave,microwaveLeaf,microwaveFascia,hobBaseRun,hobPlate,hood,hob,burners,burnerKnobs,burnerFlames,toggleBurner,renderer,scene,camera,views,view,sinkWater,toggleTap,togglePlug,syncWater,waterReset,bowlVisuals,puddle,tapAssembly,spout,tapLever,leverTarget,waterStream,swivelTap,openEditor,updateWallVisibility,structuralWalls,objectChoice,pick,choose,state,kitchenDoors,blinds,dining};
+window.kitchenModel={sink,bowls,animateCabinets,hoodChimney,microwave,microwaveLeaf,microwaveFascia,hobBaseRun,hobPlate,hood,hob,burners,burnerKnobs,burnerFlames,toggleBurner,renderer,scene,camera,views,view,sinkWater,toggleTap,togglePlug,syncWater,waterReset,bowlVisuals,puddle,tapAssembly,spout,tapLever,leverTarget,waterStream,swivelTap,openEditor,updateWallVisibility,structuralWalls,objectChoice,pick,choose,state,kitchenDoors,blinds,dining};
 
 const publicReference=document.querySelector("#public-reference");
 document.querySelector("#public-reference-open").onclick=()=>publicReference.showModal();

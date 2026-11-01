@@ -1,0 +1,20 @@
+{
+  "name": "renovate-kitchen",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "test": "node scripts/timed-stages.mjs unit",
+    "test:browser": "node scripts/timed-stages.mjs browser",
+    "audit:public": "node scripts/timed-stages.mjs public-audit",
+    "check": "node scripts/timed-stages.mjs check",
+    "test:render": "node scripts/timed-stages.mjs render",
+    "test:flood": "node scripts/timed-stages.mjs flood",
+    "test:extractor": "node scripts/timed-stages.mjs extractor"
+  },
+  "devDependencies": {
+    "playwright": "1.62.1"
+  }
+}

@@ -23,6 +23,7 @@ export function createSurfaces({texture,seeded}){
   for(let i=0;i<480;i++){const x=rand()*w,phase=rand()*6;c.strokeStyle=`rgba(105,69,33,${.025+rand()*.17})`;c.lineWidth=.3+rand();c.beginPath();for(let y=0;y<h;y+=10){const xx=x+Math.sin(y/130+phase)*4+Math.sin(y/290+phase)*7;if(y===0)c.moveTo(xx,y);else c.lineTo(xx,y);}c.stroke();}
   for(let i=0;i<1700;i++){c.fillStyle='rgba(247,224,179,.13)';c.fillRect(rand()*w,rand()*h,.6,4+rand()*9);}
  },512,1024);
+ oak.wrapS=oak.wrapT=THREE.RepeatWrapping;
  const grain=texture((c,w,h)=>{const rand=seeded(18);c.fillStyle='#f7f7f7';c.fillRect(0,0,w,h);for(let i=0;i<420;i++){c.strokeStyle=`rgba(70,70,70,${rand()*.07})`;c.lineWidth=.25+rand()*.6;const x=rand()*w;c.beginPath();c.moveTo(x,0);for(let y=0;y<h;y+=12)c.lineTo(x+Math.sin(y/90+i)*1.6,y);c.stroke();}},256,512);
  const plaster=texture((c,w,h)=>{const rand=seeded(12);c.fillStyle='#eeeeee';c.fillRect(0,0,w,h);for(let i=0;i<14000;i++){c.fillStyle=rand()>.5?'rgba(255,255,255,.15)':'rgba(100,100,100,.035)';c.fillRect(rand()*w,rand()*h,1,1);}},256,256);
  const stone=texture((c,w,h)=>{const rand=seeded(52);c.fillStyle='#efefeb';c.fillRect(0,0,w,h);for(let i=0;i<4800;i++){const grey=165+Math.floor(rand()*45);c.fillStyle=`rgba(${grey},${grey},${grey},${.06+rand()*.1})`;c.fillRect(rand()*w,rand()*h,.35+rand()*.6,.3+rand()*.55);}},512,512);

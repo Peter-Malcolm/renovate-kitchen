@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import {dimensions} from './dimensions.js';
+import {furnitureWoodUV} from './furniture-wood.js';
 
 export function addDining({scene,box,cylinder,material,paint,white,silver,dark,oak,wood,surfaces,glass,rollerBlind}) {
   const group=new THREE.Group();
@@ -45,9 +46,9 @@ export function addDining({scene,box,cylinder,material,paint,white,silver,dark,o
   const mat=box(.72,.009,.46,-1.81,.005,2.21,material('#5c594d'),group);mat.name='Back-door mat';
   const coir=material('#9b8867');coir.bumpMap=surfaces.relief(surfaces.weave);coir.bumpScale=.002;box(.66,.009,.4,-1.81,.009,2.21,coir,group);
   const table=new THREE.Group();table.position.set(-.26,0,3.55);group.add(table);table.name='Existing 180 cm table';table.userData.choice='table';
-  const tableWood=surfaces.oak.clone();tableWood.repeat.set(1,.5);tableWood.needsUpdate=true;
+  const tableWood=surfaces.oak.clone();tableWood.repeat.set(1,1);tableWood.needsUpdate=true;
   const topMat=new THREE.MeshPhysicalMaterial({map:tableWood,bumpMap:surfaces.relief(tableWood),bumpScale:.00045,color:'#d6ba8e',roughness:.52,clearcoat:.15,clearcoatRoughness:.4,envMapIntensity:.5});
-  box(dimensions.tableLength,.055,.88,0,.755,0,topMat,table);
+  furnitureWoodUV(box(dimensions.tableLength,.055,.88,0,.755,0,topMat,table),'x');
   for(const x of [-.69,.69]){box(.07,.7,.06,x,.35,-.32,dark,table);box(.07,.7,.06,x,.35,.32,dark,table);box(.07,.06,.69,x,.06,0,dark,table);}
   const woodTable=new THREE.Group();woodTable.name='Extending oak table concept';woodTable.userData.choice='table';woodTable.position.copy(table.position);group.add(woodTable);
   const tableOak=new THREE.MeshPhysicalMaterial({map:tableWood,bumpMap:surfaces.relief(tableWood),bumpScale:.00035,color:'#eee3ca',roughness:.56,clearcoat:.12,clearcoatRoughness:.42,envMapIntensity:.5});
@@ -66,6 +67,8 @@ export function addDining({scene,box,cylinder,material,paint,white,silver,dark,o
    for(const x of [-legX,legX])for(const z of [-legZ,legZ]){const geo=new THREE.CylinderGeometry(style==='scandi'?.035:.046,style==='scandi'?.021:.036,.70,style==='scandi'?16:4);const leg=new THREE.Mesh(geo,tableOak);leg.rotation.y=Math.PI/4;leg.position.set(x,.35,z);leg.castShadow=true;leg.receiveShadow=true;woodTable.add(leg);}
    for(const z of [-legZ,legZ])box(legX*2,.085,.025,0,.677,z,tableOak,woodTable);for(const x of [-legX,legX])box(.025,.085,legZ*2,x,.677,0,tableOak,woodTable);
    for(const x of extended?[-.3,.3]:[0]){const seamWidth=style==='oval'?width*Math.sqrt(1-(x/(length/2))**2):width-.015;box(.0015,.0007,seamWidth,x,.7705,0,seamMat,woodTable);}
+   // Top boards and long aprons run lengthwise; end aprons run across the table.
+   for(const part of woodTable.children)if(part.material===tableOak)furnitureWoodUV(part,part.geometry.type==='BoxGeometry'&&part.geometry.parameters.depth>part.geometry.parameters.width?'z':'x');
    woodTable.userData.length=length;woodTable.userData.width=width;woodTable.userData.style=style;
   }
   const currentChairs=new THREE.Group();group.add(currentChairs);currentChairs.name='Current chairs';currentChairs.userData.choice='chairs';
@@ -115,6 +118,12 @@ export function addDining({scene,box,cylinder,material,paint,white,silver,dark,o
    const vertices=[],uvs=[],indices=[];for(let i=0;i<=24;i++){const t=i/24,xx=(t-.5)*.40,zz=-.23+.7*xx*xx,yy=.772+.018*(1-(xx/.2)**2);vertices.push(xx,yy-.052,zz,xx,yy+.052,zz);uvs.push(t,0,t,1);if(i<24){const a=i*2;indices.push(a,a+1,a+2,a+1,a+3,a+2);}}
    const geo=new THREE.BufferGeometry();geo.setAttribute('position',new THREE.Float32BufferAttribute(vertices,3));geo.setAttribute('uv',new THREE.Float32BufferAttribute(uvs,2));geo.setIndex(indices);geo.computeVertexNormals();const backMat=oak.clone();backMat.side=THREE.DoubleSide;const back=new THREE.Mesh(geo,backMat);back.castShadow=true;c.add(back);
   }
+  const chairPine=pine.clone();chairPine.map=pine.map.clone();chairPine.map.repeat.set(1,1);chairPine.map.offset.set(0,0);chairPine.map.needsUpdate=true;chairPine.bumpMap=surfaces.relief(chairPine.map);
+  currentChairs.traverse(part=>{if(part.isMesh&&part.material===pine){part.material=chairPine;furnitureWoodUV(part,'y');}});
+  for(const chairs of [nelChairs,leatherChairs,scandiChairs])chairs.traverse(part=>{
+   if(!part.isMesh || (part.material!==oak && part.material.map!==oak.map))return;
+   furnitureWoodUV(part,part.geometry.type==='ExtrudeGeometry'?'y':'x');
+  });
   for(const chairs of [currentChairs,nelChairs,leatherChairs,scandiChairs])chairs.position.set(-.26,0,.12);
   function setChairs(style){currentChairs.visible=style==='current';nelChairs.visible=style==='nel';leatherChairs.visible=style==='leather'||style==='swyft-shadow';leather.color.set(style==='swyft-shadow'?'#555754':'#895330');leather.roughness=style==='swyft-shadow'?.95:.6;leather.bumpMap=surfaces.relief(style==='swyft-shadow'?surfaces.weave:surfaces.plaster);scandiChairs.visible=style==='peppermill';}
 
